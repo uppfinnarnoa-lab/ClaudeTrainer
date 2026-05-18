@@ -401,6 +401,102 @@ Manual sync:    Button triggers same incremental sync immediately
 
 **Token refresh:** Middleware checks expiry before each API call, refreshes automatically.
 
+**Activity descriptions as AI context:**
+Strava is the primary data source specifically because activity names and descriptions are written there. Every synced activity stores `name` and `description` in full. These are indexed and used as context for the AI coach — enabling queries like *"what did I write about that long run in March?"* or the coach noticing *"you mentioned knee pain in 3 activities last month"*.
+
+### 6.2b Garmin Connect Integration (HRV + Sleep only)
+
+Garmin is synced **only** for physiological data that Strava does not provide. Activities remain exclusively Strava-sourced so that user-written descriptions are always present.
+
+**Data fetched from Garmin:**
+- **HRV status** — nightly HRV score + HRV balance trend (Garmin's 5-night rolling baseline)
+- **Sleep data** — total sleep, sleep stages (light/deep/REM/awake), sleep score, bed/wake times
+- **Resting HR** — morning resting heart rate (more reliable from Garmin than Strava)
+- **Body Battery** (if available) — Garmin's proprietary energy reserve score (0–100)
+- **Respiration rate** (if available) — nightly average
+
+**What is NOT fetched from Garmin:**
+- Activities (use Strava for all activity data, always)
+- GPS routes, segments, laps, splits
+
+**Sync strategy:**
+- Daily pull at 08:00 (after nighttime data is processed by Garmin)
+- Stores per-day in `GarminDailySummary` table
+- Manual sync button in Settings → Integrations
+
+**Schema addition:**
+```prisma
+model GarminAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model GarminDailySummary {
+  id              String   @id @default(cuid())
+  userId          String
+  date            DateTime @db.Date
+  restingHR       Int?
+  hrvNightly      Float?   // ms — overnight average
+  hrvBalance      String?  // "Balanced" | "Low" | "Unbalanced" — Garmin's status
+  sleepScore      Int?     // 0–100
+  sleepDuration   Int?     // seconds
+  sleepDeep       Int?     // seconds
+  sleepLight      Int?     // seconds
+  sleepRem        Int?     // seconds
+  sleepAwake      Int?     // seconds
+  bodyBattery     Int?     // 0–100, end-of-day value
+  respirationRate Float?
+  user            User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+```
+
+**AI context integration:**
+HRV trend and sleep data are included in the coach's daily context block:
+```
+Recovery data (last 7 days):
+  HRV:   52 → 49 → 47 → 45 → 43 → 41 → 40 ms  ← declining trend, flagged
+  Sleep: 7.2h avg, 68 score avg
+  Body Battery: 72 (this morning)
+  Status: HRV has dropped 23% over 7 days — potential early overreaching or illness onset
+```
+
+### 6.2c Weather Data
+
+**Source:** [Open-Meteo](https://open-meteo.com/) — free, no API key required, historical weather by coordinates and date.
+
+**Why not from Strava:** Strava occasionally includes `device_watts` and perceived conditions in newer activities, but the data is device-dependent and incomplete. Open-Meteo provides consistent, queryable historical data.
+
+**Data fetched per activity (on sync, not on-demand):**
+- Temperature (°C) at activity start time
+- Wind speed (km/h)
+- Precipitation (mm)
+- Weather condition code (clear / cloudy / rain / snow)
+
+Fetched in a **batch background job** after Strava sync — one API call per activity per day, rate-limited to avoid hammering the API during initial sync of 2000 activities.
+
+**Schema addition to `Activity`:**
+```prisma
+weatherTemp     Float?   // °C
+weatherWind     Float?   // km/h
+weatherPrecip   Float?   // mm
+weatherCode     Int?     // WMO weather code
+```
+
+**Usage in statistics:**
+- Activity detail card shows weather badge: `🌤 14°C · 12 km/h wind`
+- Statistics filter: filter charts by temperature range, condition (show only runs in rain, etc.)
+- Correlation insight (AI): *"Your average pace is 9 sec/km slower in temperatures above 20°C"*
+- Tooltip: *"Weather significantly affects performance. Heat increases cardiovascular strain; cold air can reduce lung capacity. Comparing similar-condition efforts gives a truer picture of fitness."*
+
+**AI context:** Temperature and conditions included in activity summaries sent to the coach — enabling comments like *"that threshold session was run in 27°C heat, which explains the elevated HR."*
+
 ### 6.3 Statistics Dashboard
 
 #### Educational Tooltips — Global Design Rule
@@ -534,6 +630,12 @@ Each card has an `ⓘ` tooltip and a sparkline showing the last 8 weeks trend.
 - Color-coded vs your actual PBs: green (predicted faster), gray (similar), red (slower than PB)
 - Tooltip: *"These predictions assume peak fitness and a good race. They're most accurate when your VDOT is based on a recent race performance."*
 
+**TSB-adjusted ("today's") race predictions**
+- A second column alongside the VDOT-based prediction: what you'd likely run *right now* given current fatigue/freshness
+- Formula: base VDOT prediction × adjustment factor derived from TSB (fresh = ~100%, fatigued at TSB −30 = ~96–97%)
+- Shows two rows per distance: `Peak fitness: 38:45` / `Today (TSB −18): 39:20`
+- Tooltip: *"Your peak prediction assumes you've tapered and are fully rested. The today-adjusted number reflects your current fatigue state. The gap between them is how much performance you're currently 'leaving on the table' through accumulated fatigue — normal and expected in heavy training."*
+
 **Race readiness per distance (gauge row)**
 - How well your recent training matches the demands of each distance (volume, long runs, interval type)
 - Tooltip: *"A 5K demands more VO2max work; a marathon demands more aerobic volume and long runs. This score reflects how targeted your recent training is for each distance."*
@@ -555,6 +657,25 @@ Each card has an `ⓘ` tooltip and a sparkline showing the last 8 weeks trend.
 **Overtraining risk indicator (gauge)**
 - ATL/CTL ratio: if ATL rises >10% faster than CTL over 2 weeks, triggers warning
 - Tooltip: *"The '10% rule': avoid increasing weekly training load by more than 10% week-over-week. Rapid ATL spikes without CTL base are the leading predictor of overuse injury."*
+
+**HRV trend (line chart)**
+- Nightly HRV (ms) from Garmin, plotted over time alongside training load (CTL)
+- Colored band: balanced / low / declining — based on Garmin's own baseline
+- Tooltip: *"Heart Rate Variability measures the variation in time between heartbeats. Higher HRV = your nervous system is well-recovered. A sustained downward trend (>7 days) often precedes illness or overtraining by days."*
+
+**Sleep quality trend (stacked area chart)**
+- Hours of deep / REM / light / awake per night, rolling 4 weeks
+- Sleep score overlay
+- Tooltip: *"Deep sleep drives physical recovery and growth hormone release. REM sleep drives cognitive function and motor learning. Consistently low deep sleep impairs athletic adaptation even when training load is moderate."*
+
+**Readiness score (daily gauge on dashboard)**
+- Composite of: HRV status (40%), TSB (30%), sleep score (20%), resting HR trend (10%)
+- Color: green / yellow / red
+- Tooltip: *"A composite daily score. Use it to decide whether to push or pull back on a planned quality session. It is a guide, not a rule — learn how it correlates with how you actually feel."*
+
+**Resting HR trend (line)**
+- From Garmin daily summaries, 12-week view
+- Tooltip: *"A rising resting HR (3–5 bpm above your normal) is an early signal of fatigue, illness, or dehydration. Track your baseline: for most trained athletes it's 40–55 bpm."*
 
 **Injury/illness log (timeline)**
 - Visual timeline of all missed-workout reasons over the past year
@@ -709,9 +830,27 @@ Long run:       2h 10min (Sunday)
 - Charts: missed sessions per month, breakdown by reason, injury frequency over time
 - This feeds directly into AI context (see below)
 
+**Race Calendar (integrated in planner view):**
+- Dedicated section above the calendar: upcoming races listed chronologically with countdown
+- Each race entry: name, date, distance, priority (A / B / C race), goal time, notes
+- Priority system:
+  - **A race** — peak event, full taper, everything else is prep
+  - **B race** — important but no full taper, used as fitness check
+  - **C race** — training race, no special prep
+- Auto-generated **taper start date** shown in the calendar as a visual marker based on race date and distance (e.g. marathon → taper starts 3 weeks out, 5K → 1 week)
+- Coach sees the race calendar as context and can structure training blocks around A races automatically
+- After a race is completed it links to the matched Strava activity and moves to race history
+
+**Adaptive plan re-scheduling:**
+- When a workout is marked as missed, a prompt appears: *"Adjust the rest of the week?"*
+- If confirmed: AI suggests a revised schedule (moves the quality session, protects recovery days)
+- Suggestions shown as a diff vs current plan — user accepts, rejects, or edits each change
+- Tracks whether the rescheduled workout was eventually completed (adherence metric)
+
 **AI integration point:**
 - "Plan my training" button → opens coach chat pre-loaded with current plan context
 - AI can suggest workouts and add them directly to calendar via tool calls
+- Coach sees race calendar (A/B/C priority, upcoming dates, goal times) as permanent context
 
 ### 6.5 Virtual Coach (AI)
 
@@ -992,6 +1131,12 @@ claudetrainer/
 │   │   ├── client.ts             # Strava API wrapper
 │   │   ├── sync.ts               # Sync logic
 │   │   └── types.ts
+│   ├── garmin/
+│   │   ├── client.ts             # Garmin Connect API wrapper (OAuth 2)
+│   │   └── sync.ts               # Daily HRV + sleep sync
+│   ├── weather/
+│   │   ├── client.ts             # Open-Meteo API wrapper
+│   │   └── backfill.ts           # Background weather fetch for existing activities
 │   ├── ai/
 │   │   ├── client.ts             # AIClient interface
 │   │   ├── claude.ts             # Claude implementation
@@ -1099,8 +1244,10 @@ GOOGLE_AI_API_KEY=""
 - [ ] Initialize Next.js project, Prisma, PostgreSQL
 - [ ] NextAuth with email/password
 - [ ] Strava OAuth flow + token management
-- [ ] Initial sync (fetch all historical activities)
+- [ ] Initial sync (fetch all historical activities, including descriptions)
 - [ ] Activity storage and basic list view
+- [ ] Garmin Connect OAuth + daily HRV/sleep sync
+- [ ] Weather backfill job (Open-Meteo, batch after Strava sync)
 - [ ] Basic app shell (sidebar, navigation)
 
 ### Phase 2 — Statistics (Week 2–4)

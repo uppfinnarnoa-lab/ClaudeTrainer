@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(git *)",
+      "Bash(ls *)",
+      "Bash(ls)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(which *)",
+      "Bash(echo *)",
+      "Bash(pwd)",
+      "Bash(whoami)",
+      "Bash(df *)",
+      "Bash(du *)",
+      "Bash(ps *)",
+      "Bash(env)",
+      "Bash(printenv *)",
+      "Bash(type *)",
+      "Bash(file *)",
+      "Bash(stat *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(diff *)",
+      "Bash(dir *)",
+      "Bash(tree *)",
+      "Bash(more *)",
+      "Bash(less *)",
+      "Bash(mv *)",
+      "Bash(cp *)"
+    ]
+  }
+}
