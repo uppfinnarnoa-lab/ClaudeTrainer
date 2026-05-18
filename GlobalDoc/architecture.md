@@ -28,6 +28,7 @@ Full schema with all fields is in `prisma/schema.prisma`. Summary:
 | `WorkoutType` | User-defined workout types per sport |
 | `WorkoutTemplate` | Saved workout templates with ordered sections |
 | `WorkoutSection` | Sections within a template (zone targets, reps, duration) |
+| `TrainingBlock` | Named multi-week periods (Base/Build/Peak/Taper) with date range + race link |
 | `PlannedWorkout` | Calendar entries; status + missedReason when past |
 | `RaceRecord` | PBs per distance with full history |
 | `Conversation` / `Message` | AI coach chat history with token cost tracking |

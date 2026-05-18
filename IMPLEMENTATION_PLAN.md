@@ -314,20 +314,36 @@ model PlannedWorkout {
 // "other"        — free-text only
 
 model RaceRecord {
-  id          String   @id @default(cuid())
-  userId      String
-  distance    String   // "5K", "10K", "Half Marathon", "Marathon", "Orienteering Sprint", custom
-  distanceM   Float    // meters, for sorting
-  time        Int      // seconds
-  date        DateTime @db.Date
-  eventName   String?
+  id               String   @id @default(cuid())
+  userId           String
+  distance         String   // "5K", "10K", "Half Marathon", "Marathon", custom — no orienteering
+  distanceM        Float    // meters, for sorting
+  time             Int      // seconds
+  date             DateTime @db.Date
+  eventName        String?
   stravaActivityId String?
-  notes       String?
-  isManual    Boolean  @default(false)
-  user        User     @relation(fields: [userId], references: [id])
+  notes            String?
+  isManual         Boolean  @default(false)
+  user             User     @relation(fields: [userId], references: [id])
 
   @@index([userId, distance])
   @@index([userId, distanceM])
+}
+
+// Training block: a named period of weeks with a shared purpose (Base, Build, Peak, Taper)
+model TrainingBlock {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String    // "Base 1", "Build", "Peak", "Taper", or custom
+  blockType   String    // "base" | "build" | "peak" | "taper" | "custom"
+  color       String    // hex — shown as colored band in calendar header
+  startDate   DateTime  @db.Date
+  endDate     DateTime  @db.Date
+  targetRaceId String?  // optional link to a PlannedWorkout or RaceCalendarEntry
+  notes       String?
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, startDate])
 }
 
 model Conversation {
@@ -772,23 +788,28 @@ Zone dist: Z1 42% · Z2 10% · Z3 0% · Z4 40% · Z5 0%  (rest: recovery)
 - Custom workouts: same builder, but saved only to the plan (not the template library unless user clicks "Save as template")
 - Color-coded by sport; intensity shown via a thin colored bottom border (green=easy, yellow=moderate, orange=hard, red=max)
 
-**Summary panels:**
-- **Week summary** (sidebar when week view, or bottom panel in month view):
-  - Total planned: distance, time by sport (stacked)
-  - Load estimate (TSS)
-  - Completeness % (actual vs planned, updates as week progresses)
-  - Zone distribution for the week (see Intensity Analysis below)
-- **Month summary**:
-  - Monthly volume plan per sport
-  - Week-by-week breakdown table
-  - Load curve chart (planned TSS per day)
+**Inline week summary (month view — always visible):**
 
-**Intensity & Structure Analysis (week view):**
-
-Shown in a dedicated panel below or beside the week calendar:
+In month view, each week row has a compact summary strip directly beside the week number — always visible without any click:
 
 ```
-Week 21 · May 19–25 · Planned load: 380 TSS
+Wk 21  |  Run 82km · 6h 45min  |  Cykel 40km · 1h 20min  |  TSS 340  |  ▓▓▓▓░  Z2-heavy
+```
+
+- Shows km + time for each sport present that week (only sports with planned sessions shown)
+- TSS estimate for the week
+- A miniature 5-segment zone bar as a visual intensity fingerprint
+- Completeness badge if the week is in the past: `4/5 ✓` or `3/5 (1 missed)`
+- Block label shown as a colored tag if the week belongs to a training block: `[BUILD]`
+- Clicking anywhere on the strip opens the **Detail Panel** (see below)
+
+**Detail Panel (on click — slides in from right or expands below):**
+
+Three tabs: **Week**, **Block**, **Plan**
+
+*Week tab:*
+```
+Week 21 · May 19–25 · BUILD block · Planned load: 380 TSS
 
 Volume by sport:
   Running   ████████████░░░  85 km · 7h 20min
@@ -801,17 +822,41 @@ Zone distribution (all sports):
   Z4 Threshold  █████░░░░░░░░░░  15%  1h 18min
   Z5 VO2max     ███░░░░░░░░░░░░   7%  0h 37min
 
-Intensity distribution:
-  Easy/recovery  70%  ← ideal endurance ratio: 75–80%
-  Hard/quality   30%  ← slightly high, watch recovery
-
+Intensity: Easy/recovery 70% · Hard/quality 30%  ← slightly high for build phase
 Quality sessions: 3  (LT run, Intervals, Race-pace)
-Interval time:  42 min
-Long run:       2h 10min (Sunday)
+Interval time:  42 min · Long run: 2h 10min (Sunday)
 ```
 
+*Block tab* (visible when the week belongs to a block):
+- Block name, type, date range, target race
+- Aggregated stats for the entire block: total km/time per sport, TSS per week as a curve, zone distribution over all block weeks
+- Polarization chart for the block: how intensity distribution held across weeks
+- Progress: week X of Y in block, % of planned sessions completed so far
+
+*Plan tab* (entire planned season at a glance):
+- Timeline view of all defined blocks from today to the target race
+- Each block shown as a horizontal bar with: name, type color, week count, total planned km
+- Load curve (planned TSS per week) over the full season
+- Taper start marker and race date marker
+- "How far out" summary: `14 weeks to race · 3 blocks remaining · Est. peak CTL: 72`
+
+**Training Block planning:**
+
+Blocks are defined in a **Block Editor** accessible from the planner header:
+- Create block: name, type (Base / Build / Peak / Taper / Custom), date range, color, optional notes and target race link
+- Blocks appear as a colored banner row above the calendar weeks — like a Gantt-style header
+- Weeks inherit the block's label and color as a tag on the inline summary strip
+- Blocks can overlap or have gaps (recovery weeks with no block label)
+- Block types have default color suggestions: Base = blue, Build = orange, Peak = red, Taper = teal
+- AI coach sees the full block structure as context and can reference it: *"you're in week 3 of your build block with 5 weeks until taper"*
+
+**Race goal integration in blocks:**
+- When creating a block you can link it to an A/B/C race from the race calendar
+- This binds the block's purpose to the race — taper block auto-suggests its end date as race day
+- The plan-tab timeline renders all blocks in sequence toward the linked race, making the macro periodization visible at a glance
+
 **Polarization analysis:**
-- Compares actual zone distribution to target profile (configurable: polarized 80/20, threshold-heavy, pyramidal)
+- Compares zone distribution to target profile (configurable: polarized 80/20, threshold-heavy, pyramidal)
 - Shows deviation with a recommendation: "Z3 is overrepresented — consider replacing the Tuesday moderate run with an easy run"
 - Historical polarization chart: how intensity distribution has shifted over weeks
 
@@ -966,11 +1011,11 @@ const PRICING = {
 
 **Distance categories:**
 ```
-Running:        800m, 1500m, Mile, 3K, 5K, 10K, Half Marathon, Marathon, Ultra (custom)
-Orienteering:   Sprint, Short, Middle, Long, Ultra-Long
-Cycling:        Custom distances
-Skiing:         Custom distances
+Running:   800m, 1500m, Mile, 3K, 5K, 10K, 15K, Half Marathon, Marathon, Ultra (custom)
+Cycling:   Custom distances
+Skiing:    Custom distances
 ```
+Orienteering is excluded from the race tracker — OL-pass are logged as activities and inform training stats, but are not tracked as timed races with PBs (course variations make direct comparison meaningless).
 
 **PB Management:**
 - For each distance: show current PB prominently
@@ -1116,7 +1161,12 @@ claudetrainer/
 │   │   ├── WorkoutBuilder.tsx       # Section editor + live preview
 │   │   ├── WorkoutSection.tsx       # Single section row (zone picker, reps, etc.)
 │   │   ├── ZoneBar.tsx              # Stacked zone distribution bar
-│   │   ├── WeeklySummary.tsx        # Volume + zone + polarization panel
+│   │   ├── WeekSummaryStrip.tsx     # Inline km/time/zone bar per week row in month view
+│   │   ├── DetailPanel.tsx          # Slide-in panel with Week/Block/Plan tabs
+│   │   ├── BlockEditor.tsx          # Create/edit training blocks with date ranges
+│   │   ├── BlockTimeline.tsx        # Gantt-style block header above calendar
+│   │   ├── SeasonTimeline.tsx       # Full season arc in Plan tab
+│   │   ├── WeeklySummary.tsx        # Volume + zone + polarization panel (week tab)
 │   │   └── IntensityAnalysis.tsx    # Polarization chart + recommendations
 │   ├── coach/
 │   │   ├── ChatInterface.tsx
