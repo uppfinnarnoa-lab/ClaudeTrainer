@@ -31,24 +31,53 @@ export function RacesClient({ records: initialRecords }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  // Smart filter: hide results >35% slower than PB (catches OL, other terrain)
+  const [smartFilter, setSmartFilter] = useState(true);
+  const FILTER_THRESHOLD = 1.35; // hide if time > PB × 1.35
 
-  // Group by distance
+  // Compute PB per distance (across ALL records, before filtering)
+  const pbByDistance = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of records) {
+      if (!map.has(r.distance) || r.time < map.get(r.distance)!) map.set(r.distance, r.time);
+    }
+    return map;
+  }, [records]);
+
+  // Apply smart filter
+  const filteredRecords = useMemo(() => {
+    if (!smartFilter) return records;
+    return records.filter(r => {
+      const pb = pbByDistance.get(r.distance);
+      return !pb || r.time <= pb * FILTER_THRESHOLD;
+    });
+  }, [records, smartFilter, pbByDistance]);
+
+  // Count hidden records per distance
+  const hiddenCount = useMemo(() => {
+    if (!smartFilter) return 0;
+    return records.length - filteredRecords.length;
+  }, [records, filteredRecords, smartFilter]);
+
+  // Group by distance using filtered records
   const distances = useMemo(() => {
     const map = new Map<string, RaceRecord[]>();
-    for (const r of records) {
+    for (const r of filteredRecords) {
       if (!map.has(r.distance)) map.set(r.distance, []);
       map.get(r.distance)!.push(r);
     }
-    // Sort distance keys
     return Array.from(map.entries()).sort(([, a], [, b]) => a[0].distanceM - b[0].distanceM);
-  }, [records]);
+  }, [filteredRecords]);
 
   const selectedDistance = selected ?? distances[0]?.[0];
   const distanceRecords = useMemo(() =>
-    records.filter(r => r.distance === selectedDistance).sort((a, b) => a.date.localeCompare(b.date)),
-    [records, selectedDistance]
+    filteredRecords.filter(r => r.distance === selectedDistance).sort((a, b) => a.date.localeCompare(b.date)),
+    [filteredRecords, selectedDistance]
   );
-  const pb = distanceRecords.reduce<RaceRecord | null>((best, r) => !best || r.time < best.time ? r : best, null);
+  // PB is always from all records (unfiltered), not just filtered
+  const pb = records
+    .filter(r => r.distance === selectedDistance)
+    .reduce<RaceRecord | null>((best, r) => !best || r.time < best.time ? r : best, null);
 
   async function importFromStrava() {
     setImporting(true);
@@ -88,6 +117,23 @@ export function RacesClient({ records: initialRecords }: Props) {
         >
           <Plus size={15} />
           Add manually
+        </button>
+
+        {/* Smart filter toggle */}
+        <button
+          onClick={() => setSmartFilter(v => !v)}
+          className={cn(
+            "ml-auto inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border transition",
+            smartFilter
+              ? "border-accent/30 bg-accent/5 text-accent"
+              : "border-border text-muted hover:text-primary"
+          )}
+          title="Hide results >35% slower than PB (filters out orienteering, trail, other terrain)"
+        >
+          {smartFilter ? "Road filter on" : "Show all"}
+          {smartFilter && hiddenCount > 0 && (
+            <span className="text-muted font-normal">({hiddenCount} hidden)</span>
+          )}
         </button>
       </div>
 
