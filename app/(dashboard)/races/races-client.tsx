@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, RefreshCw, Loader2, Edit2, Trash2, ExternalLink, Trophy } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { Plus, Loader2, Edit2, Trash2, ExternalLink, Trophy, Link2 } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceDot } from "recharts";
 import { secToTimeStr } from "@/lib/fitness/paces";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
@@ -20,22 +20,28 @@ interface RaceRecord {
   isManual: boolean;
 }
 
+interface NearActivity {
+  stravaId: string;
+  name: string;
+  date: string;
+  distanceKm: number;
+  movingTime: number;
+}
+
 interface Props { records: RaceRecord[] }
 
-const DISTANCE_ORDER = ["800m","1500m","Mile","3K","5K","10K","15K","Half Marathon","Marathon"];
+// Canonical distance order for the sidebar
+const DISTANCE_ORDER = ["400m","800m","1K","1500m","Mile","2K","3K","5K","10K","15K","Half Marathon","Marathon"];
 
 export function RacesClient({ records: initialRecords }: Props) {
   const router = useRouter();
   const [records, setRecords] = useState(initialRecords);
-  const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  // Smart filter: hide results >35% slower than PB (catches OL, other terrain)
+  const [editRecord, setEditRecord] = useState<RaceRecord | null>(null);
   const [smartFilter, setSmartFilter] = useState(true);
-  const FILTER_THRESHOLD = 1.35; // hide if time > PB × 1.35
+  const FILTER_THRESHOLD = 1.35;
 
-  // Compute PB per distance (across ALL records, before filtering)
   const pbByDistance = useMemo(() => {
     const map = new Map<string, number>();
     for (const r of records) {
@@ -44,7 +50,6 @@ export function RacesClient({ records: initialRecords }: Props) {
     return map;
   }, [records]);
 
-  // Apply smart filter
   const filteredRecords = useMemo(() => {
     if (!smartFilter) return records;
     return records.filter(r => {
@@ -53,20 +58,21 @@ export function RacesClient({ records: initialRecords }: Props) {
     });
   }, [records, smartFilter, pbByDistance]);
 
-  // Count hidden records per distance
-  const hiddenCount = useMemo(() => {
-    if (!smartFilter) return 0;
-    return records.length - filteredRecords.length;
-  }, [records, filteredRecords, smartFilter]);
+  const hiddenCount = records.length - filteredRecords.length;
 
-  // Group by distance using filtered records
   const distances = useMemo(() => {
     const map = new Map<string, RaceRecord[]>();
     for (const r of filteredRecords) {
       if (!map.has(r.distance)) map.set(r.distance, []);
       map.get(r.distance)!.push(r);
     }
-    return Array.from(map.entries()).sort(([, a], [, b]) => a[0].distanceM - b[0].distanceM);
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      const ai = DISTANCE_ORDER.indexOf(a), bi = DISTANCE_ORDER.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
   }, [filteredRecords]);
 
   const selectedDistance = selected ?? distances[0]?.[0];
@@ -74,22 +80,27 @@ export function RacesClient({ records: initialRecords }: Props) {
     filteredRecords.filter(r => r.distance === selectedDistance).sort((a, b) => a.date.localeCompare(b.date)),
     [filteredRecords, selectedDistance]
   );
-  // PB is always from all records (unfiltered), not just filtered
+
   const pb = records
     .filter(r => r.distance === selectedDistance)
     .reduce<RaceRecord | null>((best, r) => !best || r.time < best.time ? r : best, null);
 
-  async function importFromStrava() {
-    setImporting(true);
-    const res = await fetch("/api/races", { method: "PUT" });
-    setImporting(false);
-    if (res.ok) router.refresh();
-  }
-
   async function deleteRecord(id: string) {
-    if (!confirm("Delete this race result?")) return;
+    if (!confirm("Radera detta resultat?")) return;
     await fetch(`/api/races/${id}`, { method: "DELETE" });
     setRecords(prev => prev.filter(r => r.id !== id));
+  }
+
+  function onSaved(r: RaceRecord, isEdit: boolean) {
+    if (isEdit) {
+      setRecords(prev => prev.map(x => x.id === r.id ? r : x));
+    } else {
+      setRecords(prev => [...prev, r]);
+      setSelected(r.distance);
+    }
+    setShowAdd(false);
+    setEditRecord(null);
+    router.refresh();
   }
 
   const chartData = distanceRecords.map(r => ({
@@ -104,48 +115,41 @@ export function RacesClient({ records: initialRecords }: Props) {
       {/* Actions */}
       <div className="flex items-center gap-3 flex-wrap">
         <button
-          onClick={importFromStrava}
-          disabled={importing}
-          className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-sm font-medium text-primary hover:bg-surface-2 transition"
-        >
-          {importing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-          Import from Strava
-        </button>
-        <button
           onClick={() => setShowAdd(true)}
           className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white dark:text-background hover:opacity-90 transition"
         >
           <Plus size={15} />
-          Add manually
+          Lägg till resultat
         </button>
 
-        {/* Smart filter toggle */}
-        <button
-          onClick={() => setSmartFilter(v => !v)}
-          className={cn(
-            "ml-auto inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border transition",
-            smartFilter
-              ? "border-accent/30 bg-accent/5 text-accent"
-              : "border-border text-muted hover:text-primary"
-          )}
-          title="Hide results >35% slower than PB (filters out orienteering, trail, other terrain)"
-        >
-          {smartFilter ? "Road filter on" : "Show all"}
-          {smartFilter && hiddenCount > 0 && (
-            <span className="text-muted font-normal">({hiddenCount} hidden)</span>
-          )}
-        </button>
+        {records.length > 0 && (
+          <button
+            onClick={() => setSmartFilter(v => !v)}
+            className={cn(
+              "ml-auto inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border transition",
+              smartFilter
+                ? "border-accent/30 bg-accent/5 text-accent"
+                : "border-border text-muted hover:text-primary"
+            )}
+            title="Dölj resultat >35% långsammare än PB (filtrerar bort OL, terräng)"
+          >
+            {smartFilter ? "Vägfilter på" : "Visa alla"}
+            {smartFilter && hiddenCount > 0 && (
+              <span className="text-muted font-normal">({hiddenCount} dolda)</span>
+            )}
+          </button>
+        )}
       </div>
 
       {records.length === 0 ? (
         <div className="rounded-2xl bg-surface border border-border p-12 text-center">
           <Trophy size={32} className="mx-auto text-muted mb-3" />
-          <p className="text-primary font-medium">No race results yet</p>
-          <p className="text-sm text-muted mt-1">Import from Strava or add manually above.</p>
+          <p className="text-primary font-medium">Inga tävlingsresultat ännu</p>
+          <p className="text-sm text-muted mt-1">Lägg till dina PBs och tävlingsresultat manuellt ovan.</p>
         </div>
       ) : (
         <div className="grid grid-cols-[200px_1fr] gap-6">
-          {/* Distance selector */}
+          {/* Distance sidebar */}
           <div className="space-y-1">
             {distances.map(([dist, rs]) => {
               const best = rs.reduce<RaceRecord | null>((b, r) => !b || r.time < b.time ? r : b, null);
@@ -163,10 +167,8 @@ export function RacesClient({ records: initialRecords }: Props) {
                   <p className={cn("text-sm font-semibold", selectedDistance === dist ? "text-accent" : "text-primary")}>
                     {dist}
                   </p>
-                  {best && (
-                    <p className="text-xs font-mono text-muted">{secToTimeStr(best.time)}</p>
-                  )}
-                  <p className="text-xs text-muted">{rs.length} result{rs.length !== 1 ? "s" : ""}</p>
+                  {best && <p className="text-xs font-mono text-muted">{secToTimeStr(best.time)}</p>}
+                  <p className="text-xs text-muted">{rs.length} resultat</p>
                 </button>
               );
             })}
@@ -174,26 +176,30 @@ export function RacesClient({ records: initialRecords }: Props) {
 
           {/* Right panel */}
           <div className="space-y-5">
-            {/* PB card */}
             {pb && (
               <div className="rounded-2xl bg-surface border border-accent/30 p-5 flex items-center gap-4">
                 <Trophy size={24} className="text-warning shrink-0" />
                 <div className="flex-1">
-                  <p className="text-xs font-medium text-muted uppercase tracking-wide">Personal Best · {selectedDistance}</p>
+                  <p className="text-xs font-medium text-muted uppercase tracking-wide">Personbästa · {selectedDistance}</p>
                   <p className="text-3xl font-semibold font-mono text-primary mt-1">{secToTimeStr(pb.time)}</p>
                   <p className="text-sm text-muted mt-0.5">
-                    {pb.eventName ?? "Race"} · {format(parseISO(pb.date), "d MMM yyyy")}
+                    {pb.eventName ?? "Tävling"} · {format(parseISO(pb.date), "d MMM yyyy")}
                   </p>
                 </div>
+                <button
+                  onClick={() => setEditRecord(pb)}
+                  className="p-2 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition"
+                >
+                  <Edit2 size={14} />
+                </button>
               </div>
             )}
 
-            {/* Timeline chart */}
             {chartData.length > 1 && (
               <div className="rounded-xl bg-surface border border-border p-4">
-                <p className="text-xs font-medium text-muted mb-3">Time trend</p>
+                <p className="text-xs font-medium text-muted mb-3">Tidsutveckling</p>
                 <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={chartData} margin={{ left: 0, right: 8, top: 4, bottom: 0 }}>
+                  <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis dataKey="date" tickFormatter={d => format(parseISO(d), "MMM yy")} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
                     <YAxis
@@ -204,10 +210,13 @@ export function RacesClient({ records: initialRecords }: Props) {
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }}
-                      formatter={(v: number) => [secToTimeStr(v), "Time"]}
+                      formatter={(v: number) => [secToTimeStr(v), "Tid"]}
                       labelFormatter={d => format(parseISO(d as string), "d MMM yyyy")}
                     />
-                    <Line dataKey="seconds" stroke="var(--accent)" strokeWidth={2} dot={{ fill: "var(--accent)", r: 4 }} />
+                    <Line dataKey="seconds" stroke="var(--accent)" strokeWidth={2} dot={false} />
+                    {chartData.map((d, i) => d.isPB ? (
+                      <ReferenceDot key={i} x={d.date} y={d.seconds} r={5} fill="var(--warning)" stroke="var(--surface)" strokeWidth={2} />
+                    ) : null)}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -218,11 +227,11 @@ export function RacesClient({ records: initialRecords }: Props) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-surface-2">
-                    <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Date</th>
-                    <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Event</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Time</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Datum</th>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Lopp / Händelse</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Tid</th>
                     <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">vs PB</th>
-                    <th className="px-4 py-2.5 w-20" />
+                    <th className="px-4 py-2.5 w-24" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -233,7 +242,6 @@ export function RacesClient({ records: initialRecords }: Props) {
                         <td className="px-4 py-2.5 text-muted">{format(parseISO(r.date), "d MMM yyyy")}</td>
                         <td className="px-4 py-2.5 text-primary max-w-[200px] truncate">
                           {r.eventName ?? "—"}
-                          {r.isManual && <span className="ml-1.5 text-xs text-muted">(manual)</span>}
                         </td>
                         <td className="px-4 py-2.5 text-right font-mono font-semibold text-primary">
                           {secToTimeStr(r.time)}
@@ -250,6 +258,9 @@ export function RacesClient({ records: initialRecords }: Props) {
                                 <ExternalLink size={13} />
                               </a>
                             )}
+                            <button onClick={() => setEditRecord(r)} className="p-1 rounded text-muted hover:text-primary transition">
+                              <Edit2 size={13} />
+                            </button>
                             <button onClick={() => deleteRecord(r.id)} className="p-1 rounded text-muted hover:text-error transition">
                               <Trash2 size={13} />
                             </button>
@@ -265,84 +276,197 @@ export function RacesClient({ records: initialRecords }: Props) {
         </div>
       )}
 
-      {/* Add manual record modal */}
       {showAdd && (
-        <AddRaceModal
-          onClose={() => setShowAdd(false)}
-          onSave={r => { setRecords(prev => [...prev, r]); setShowAdd(false); }}
-        />
+        <RaceModal onClose={() => setShowAdd(false)} onSave={r => onSaved(r, false)} />
+      )}
+      {editRecord && (
+        <RaceModal record={editRecord} onClose={() => setEditRecord(null)} onSave={r => onSaved(r, true)} />
       )}
     </div>
   );
 }
 
-function AddRaceModal({ onClose, onSave }: { onClose: () => void; onSave: (r: RaceRecord) => void }) {
-  const PRESETS = ["800m","1500m","Mile","3K","5K","10K","15K","Half Marathon","Marathon","Custom"];
-  const PRESET_M: Record<string, number> = {
-    "800m":800,"1500m":1500,"Mile":1609,"3K":3000,"5K":5000,"10K":10000,"15K":15000,"Half Marathon":21097,"Marathon":42195
-  };
-  const [dist, setDist] = useState("5K");
-  const [customDist, setCustomDist] = useState("");
-  const [customM, setCustomM] = useState("");
-  const [hh, setHH] = useState("0");
-  const [mm, setMM] = useState("");
-  const [ss, setSS] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [event, setEvent] = useState("");
+// ── Add / Edit modal ──────────────────────────────────────────────────────────
+
+const PRESETS = [
+  { label: "400m",          m: 400 },
+  { label: "800m",          m: 800 },
+  { label: "1K",            m: 1000 },
+  { label: "1500m",         m: 1500 },
+  { label: "Mile",          m: 1609 },
+  { label: "2K",            m: 2000 },
+  { label: "3K",            m: 3000 },
+  { label: "5K",            m: 5000 },
+  { label: "10K",           m: 10000 },
+  { label: "15K",           m: 15000 },
+  { label: "Half Marathon", m: 21097 },
+  { label: "Marathon",      m: 42195 },
+  { label: "Custom",        m: 0 },
+];
+
+function RaceModal({ record, onClose, onSave }: {
+  record?: RaceRecord;
+  onClose: () => void;
+  onSave: (r: RaceRecord) => void;
+}) {
+  const isEdit = !!record;
+
+  const initialPreset = record
+    ? (PRESETS.find(p => Math.abs(p.m - record.distanceM) < 10)?.label ?? "Custom")
+    : "5K";
+
+  const [dist, setDist] = useState(initialPreset);
+  const [customDist, setCustomDist] = useState(record?.distance ?? "");
+  const [customM, setCustomM] = useState(record ? String(record.distanceM) : "");
+  const initTime = record ? {
+    hh: String(Math.floor(record.time / 3600)),
+    mm: String(Math.floor((record.time % 3600) / 60)),
+    ss: String(record.time % 60),
+  } : { hh: "0", mm: "", ss: "" };
+  const [hh, setHH] = useState(initTime.hh);
+  const [mm, setMM] = useState(initTime.mm);
+  const [ss, setSS] = useState(initTime.ss);
+  const [date, setDate] = useState(record?.date ?? new Date().toISOString().slice(0, 10));
+  const [event, setEvent] = useState(record?.eventName ?? "");
+  const [notes, setNotes] = useState(record?.notes ?? "");
+  const [linkedActivity, setLinkedActivity] = useState(record?.stravaActivityId ?? "");
+  const [nearActivities, setNearActivities] = useState<NearActivity[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  async function fetchNearActivities(d: string) {
+    if (!d) return;
+    setLoadingActivities(true);
+    const res = await fetch(`/api/races/activities-near?date=${d}`);
+    if (res.ok) setNearActivities(await res.json());
+    setLoadingActivities(false);
+  }
 
   async function save() {
     const totalSec = parseInt(hh || "0") * 3600 + parseInt(mm || "0") * 60 + parseInt(ss || "0");
-    if (!totalSec) return;
+    if (!totalSec || totalSec < 30) return;
+    const preset = PRESETS.find(p => p.label === dist);
     const label = dist === "Custom" ? customDist : dist;
-    const meters = dist === "Custom" ? parseFloat(customM) : PRESET_M[dist];
+    const meters = dist === "Custom" ? parseFloat(customM) : (preset?.m ?? 0);
+    if (!label || !meters) return;
+
     setSaving(true);
-    const res = await fetch("/api/races", {
-      method: "POST",
+    const url = isEdit ? `/api/races/${record!.id}` : "/api/races";
+    const method = isEdit ? "PATCH" : "POST";
+    const body = isEdit
+      ? { time: totalSec, date, eventName: event || null, notes: notes || null, stravaActivityId: linkedActivity || null }
+      : { distance: label, distanceM: meters, time: totalSec, date, eventName: event || null, notes: notes || null, stravaActivityId: linkedActivity || null };
+
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ distance: label, distanceM: meters, time: totalSec, date, eventName: event || null, isManual: true }),
+      body: JSON.stringify(body),
     });
     setSaving(false);
     if (res.ok) onSave(await res.json());
   }
 
+  const inp = "w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-accent/50";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-surface border border-border shadow-2xl p-6 space-y-4">
-        <h3 className="font-semibold text-primary">Add race result</h3>
-        <div>
-          <label className="text-xs text-muted mb-1 block">Distance</label>
-          <select value={dist} onChange={e => setDist(e.target.value)} className={inp}>
-            {PRESETS.map(p => <option key={p}>{p}</option>)}
-          </select>
-        </div>
-        {dist === "Custom" && (
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs text-muted mb-1 block">Label</label><input value={customDist} onChange={e => setCustomDist(e.target.value)} placeholder="e.g. 7K" className={inp} /></div>
-            <div><label className="text-xs text-muted mb-1 block">Meters</label><input type="number" value={customM} onChange={e => setCustomM(e.target.value)} placeholder="7000" className={inp} /></div>
+      <div className="w-full max-w-sm rounded-2xl bg-surface border border-border shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <h3 className="font-semibold text-primary">{isEdit ? "Redigera resultat" : "Lägg till resultat"}</h3>
+
+        {/* Distance — only shown for new records */}
+        {!isEdit && (
+          <div>
+            <label className="text-xs text-muted mb-1 block">Distans</label>
+            <select value={dist} onChange={e => setDist(e.target.value)} className={inp}>
+              {PRESETS.map(p => <option key={p.label}>{p.label}</option>)}
+            </select>
           </div>
         )}
+        {!isEdit && dist === "Custom" && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted mb-1 block">Etikett</label>
+              <input value={customDist} onChange={e => setCustomDist(e.target.value)} placeholder="t.ex. 7K" className={inp} />
+            </div>
+            <div>
+              <label className="text-xs text-muted mb-1 block">Meter</label>
+              <input type="number" value={customM} onChange={e => setCustomM(e.target.value)} placeholder="7000" className={inp} />
+            </div>
+          </div>
+        )}
+
+        {/* Time */}
         <div>
-          <label className="text-xs text-muted mb-1 block">Time (h:mm:ss)</label>
+          <label className="text-xs text-muted mb-1 block">Tid (h:mm:ss)</label>
           <div className="flex items-center gap-2">
             <input type="number" min={0} max={9} value={hh} onChange={e => setHH(e.target.value)} className={`${inp} w-14 text-center font-mono`} placeholder="0" />
-            <span className="text-muted">:</span>
-            <input type="number" min={0} max={59} value={mm} onChange={e => setMM(e.target.value)} className={`${inp} w-16 text-center font-mono`} placeholder="25" />
-            <span className="text-muted">:</span>
+            <span className="text-muted font-semibold">:</span>
+            <input type="number" min={0} max={59} value={mm} onChange={e => setMM(e.target.value)} className={`${inp} w-16 text-center font-mono`} placeholder="18" />
+            <span className="text-muted font-semibold">:</span>
             <input type="number" min={0} max={59} value={ss} onChange={e => setSS(e.target.value)} className={`${inp} w-16 text-center font-mono`} placeholder="30" />
           </div>
         </div>
-        <div><label className="text-xs text-muted mb-1 block">Date</label><input type="date" value={date} onChange={e => setDate(e.target.value)} className={inp} /></div>
-        <div><label className="text-xs text-muted mb-1 block">Event name (optional)</label><input value={event} onChange={e => setEvent(e.target.value)} placeholder="e.g. Stockholm Marathon" className={inp} /></div>
+
+        {/* Date */}
+        <div>
+          <label className="text-xs text-muted mb-1 block">Datum</label>
+          <input
+            type="date"
+            value={date}
+            onChange={e => { setDate(e.target.value); fetchNearActivities(e.target.value); }}
+            className={inp}
+          />
+        </div>
+
+        {/* Event name */}
+        <div>
+          <label className="text-xs text-muted mb-1 block">Lopp / Händelse (valfritt)</label>
+          <input value={event} onChange={e => setEvent(e.target.value)} placeholder="t.ex. Stockholm Marathon" className={inp} />
+        </div>
+
+        {/* Link to Strava activity */}
+        <div>
+          <label className="text-xs text-muted mb-1 flex items-center gap-1.5">
+            <Link2 size={11} />
+            Länka till Strava-aktivitet (valfritt)
+          </label>
+          {loadingActivities ? (
+            <div className="flex items-center gap-2 text-xs text-muted py-1">
+              <Loader2 size={12} className="animate-spin" /> Hämtar aktiviteter...
+            </div>
+          ) : nearActivities.length > 0 ? (
+            <select value={linkedActivity} onChange={e => setLinkedActivity(e.target.value)} className={inp}>
+              <option value="">— ingen länk —</option>
+              {nearActivities.map(a => (
+                <option key={a.stravaId} value={a.stravaId}>
+                  {format(parseISO(a.date), "d MMM")} · {a.name} ({a.distanceKm} km)
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-muted py-1">
+              {date ? "Inga löppass hittades ±3 dagar från detta datum." : "Välj ett datum för att se aktiviteter."}
+            </p>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="text-xs text-muted mb-1 block">Anteckningar (valfritt)</label>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Väder, form, kurs..." className={`${inp} resize-none`} />
+        </div>
+
         <div className="flex gap-2 pt-2">
-          <button onClick={onClose} className="flex-1 py-2 text-sm text-muted hover:text-primary">Cancel</button>
-          <button onClick={save} disabled={saving} className="flex-1 py-2 rounded-xl bg-accent text-sm font-semibold text-white dark:text-background hover:opacity-90 disabled:opacity-50">
-            {saving ? "Saving…" : "Save"}
+          <button onClick={onClose} className="flex-1 py-2 text-sm text-muted hover:text-primary transition">Avbryt</button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl bg-accent text-sm font-semibold text-white dark:text-background hover:opacity-90 disabled:opacity-50 transition"
+          >
+            {saving ? "Sparar…" : isEdit ? "Spara ändringar" : "Lägg till"}
           </button>
         </div>
       </div>
     </div>
   );
 }
-
-const inp = "w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-accent/50";

@@ -75,13 +75,13 @@ export function vo2maxCooper(maxHR: number, restHR: number): number {
 }
 
 /**
- * HR-pace regression (Firstbeat-style).
- * Fits a line through (avgHR, vo2atPace) points from submaximal runs.
- * Extrapolates to maxHR to estimate VO2max.
- * Only uses runs in the aerobic zone (60-90% maxHR) where HR/pace is linear.
+ * HR-pace regression (Firstbeat-style), recency-weighted.
+ * Weighted least squares: VO2 = a × HR + b
+ * Excludes interval sessions (avg pace diluted by warm-up/recovery).
+ * Uses exponential recency weighting (180-day half-life).
  */
 export function vo2maxHRPaceRegression(
-  runs: Array<{ avgHR: number; avgPaceSecPerKm: number }>,
+  runs: Array<{ avgHR: number; avgPaceSecPerKm: number; weight?: number }>,
   maxHR: number,
 ): number | null {
   const valid = runs.filter(r =>
@@ -90,27 +90,56 @@ export function vo2maxHRPaceRegression(
   );
   if (valid.length < 4) return null;
 
-  // Compute VO2 at each observed pace using Daniels approximation
   const points = valid.map(r => {
     const vMin = 1000 / r.avgPaceSecPerKm * 60;
     const vo2 = -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin;
-    return { hr: r.avgHR, vo2 };
+    return { hr: r.avgHR, vo2, w: r.weight ?? 1.0 };
   });
 
-  // Linear regression: vo2 = a × hr + b
-  const n = points.length;
-  const sumHR  = points.reduce((s, p) => s + p.hr, 0);
-  const sumVO2 = points.reduce((s, p) => s + p.vo2, 0);
-  const sumHR2 = points.reduce((s, p) => s + p.hr * p.hr, 0);
-  const sumHRVO2 = points.reduce((s, p) => s + p.hr * p.vo2, 0);
-  const denom = n * sumHR2 - sumHR * sumHR;
+  // Weighted least squares
+  const sumW    = points.reduce((s, p) => s + p.w, 0);
+  const sumWHR  = points.reduce((s, p) => s + p.w * p.hr, 0);
+  const sumWVO2 = points.reduce((s, p) => s + p.w * p.vo2, 0);
+  const sumWHR2 = points.reduce((s, p) => s + p.w * p.hr * p.hr, 0);
+  const sumWHRVO2 = points.reduce((s, p) => s + p.w * p.hr * p.vo2, 0);
+  const denom = sumW * sumWHR2 - sumWHR * sumWHR;
   if (Math.abs(denom) < 1e-6) return null;
 
-  const a = (n * sumHRVO2 - sumHR * sumVO2) / denom;
-  const b = (sumVO2 - a * sumHR) / n;
+  const a = (sumW * sumWHRVO2 - sumWHR * sumWVO2) / denom;
+  const b = (sumWVO2 - a * sumWHR) / sumW;
 
   const vo2atMax = a * maxHR + b;
   return vo2atMax > 30 && vo2atMax < 90 ? vo2atMax : null;
+}
+
+/** Returns the regression slope and intercept for HR→VO2 extrapolation, or null. */
+export function buildHRPaceRegressionParams(
+  runs: Array<{ avgHR: number; avgPaceSecPerKm: number; weight?: number }>,
+  maxHR: number,
+): { slope: number; intercept: number } | null {
+  const valid = runs.filter(r =>
+    r.avgHR > maxHR * 0.60 && r.avgHR < maxHR * 0.92 &&
+    r.avgPaceSecPerKm > 180 && r.avgPaceSecPerKm < 600
+  );
+  if (valid.length < 4) return null;
+
+  const points = valid.map(r => {
+    const vMin = 1000 / r.avgPaceSecPerKm * 60;
+    const vo2 = -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin;
+    return { hr: r.avgHR, vo2, w: r.weight ?? 1.0 };
+  });
+
+  const sumW    = points.reduce((s, p) => s + p.w, 0);
+  const sumWHR  = points.reduce((s, p) => s + p.w * p.hr, 0);
+  const sumWVO2 = points.reduce((s, p) => s + p.w * p.vo2, 0);
+  const sumWHR2 = points.reduce((s, p) => s + p.w * p.hr * p.hr, 0);
+  const sumWHRVO2 = points.reduce((s, p) => s + p.w * p.hr * p.vo2, 0);
+  const denom = sumW * sumWHR2 - sumWHR * sumWHR;
+  if (Math.abs(denom) < 1e-6) return null;
+
+  const slope = (sumW * sumWHRVO2 - sumWHR * sumWVO2) / denom;
+  const intercept = (sumWVO2 - slope * sumWHR) / sumW;
+  return { slope, intercept };
 }
 
 /** Submaximal effort extrapolation (Åstrand-Ryhming adapted for running) */
@@ -129,6 +158,11 @@ export function vo2maxFromSubmaxEffort(
 function looksLikeRace(name: string): boolean {
   return /tävl|race|lopp|mila|stafett|sic\b|parkrun|time.?trial|tt\b|halvmara|half.?marathon/i
     .test(name);
+}
+
+function looksLikeIntervals(name: string): boolean {
+  return /intervall|interval|fartlek|tisdagsbana|bana\b|x\s*\d|\d+\s*[×x]\s*\d+|rep(etition)?|varvlopp/i
+    .test(name ?? "");
 }
 
 function nearDistance(distM: number, targetM: number) {
@@ -287,7 +321,7 @@ export function estimateVO2max(
     }
   }
 
-  // Race PBs from stored records — 2× weight multiplier because these are verified race times
+  // Race PBs from stored records — 2× weight multiplier (verified race times)
   if (racePBs) {
     for (const pb of racePBs) {
       if (pb.distanceM >= 800 && pb.timeSec > 0) {
@@ -298,29 +332,49 @@ export function estimateVO2max(
     }
   }
 
-  // Best recency-boosted VDOT (score = v + ln(weight)×3 — recent fast > old fast)
+  // Best VDOT: race PBs dominate; activity candidates are top-3 average for stability
   let model1Vdot: number | null = null;
-  if (candidates.length > 0) {
-    const best = candidates.reduce((a, b) =>
+  const racePBCandidates = candidates.filter(c => c.source === "race-pb");
+  const activityCandidates = candidates.filter(c => c.source !== "race-pb");
+
+  if (racePBCandidates.length > 0) {
+    const best = racePBCandidates.reduce((a, b) =>
       (a.v + Math.log(a.weight + 0.01) * 3) > (b.v + Math.log(b.weight + 0.01) * 3) ? a : b
     );
     model1Vdot = best.v;
+  } else if (activityCandidates.length > 0) {
+    const sorted = [...activityCandidates].sort((a, b) =>
+      (b.v + Math.log(b.weight + 0.01) * 3) - (a.v + Math.log(a.weight + 0.01) * 3)
+    );
+    const top3 = sorted.slice(0, 3);
+    const totalW = top3.reduce((s, c) => s + c.weight, 0);
+    model1Vdot = top3.reduce((s, c) => s + c.v * c.weight, 0) / totalW;
   }
 
-  // ── MODEL 2: Uth-Sørensen (2003) ─────────────────────────────────────────
+  // ── MODEL 2: Uth-Sørensen (2003) — plausibility check only ──────────────
   const model2 = restHR > 0 && maxHR > 0 ? vo2maxUth(maxHR, restHR) : null;
 
-  // ── MODEL 3: Cooper (1968) ────────────────────────────────────────────────
+  // ── MODEL 3: Cooper (1968) — plausibility check only ─────────────────────
   const model3 = restHR > 0 && maxHR > 0 ? vo2maxCooper(maxHR, restHR) : null;
 
-  // ── MODEL 4: HR-pace regression (Firstbeat-style) ────────────────────────
+  // ── MODEL 4: HR-pace regression (Firstbeat-style, recency-weighted) ───────
+  // Exclude interval sessions — their avg pace is diluted by warm-up/recovery
   const regressionRuns = runs
-    .filter(a => a.avgHR && a.distanceM >= 3000 && a.timeSec > 0)
-    .map(a => ({ avgHR: a.avgHR!, avgPaceSecPerKm: a.timeSec / (a.distanceM / 1000) }));
+    .filter(a => a.avgHR && a.distanceM >= 3000 && a.timeSec > 0
+      && !looksLikeIntervals(a.name ?? ""))
+    .map(a => ({
+      avgHR: a.avgHR!,
+      avgPaceSecPerKm: a.timeSec / (a.distanceM / 1000),
+      weight: recencyWeight(a.startDate), // recency-weighted
+    }));
+  const nValidRegression = regressionRuns.filter(r =>
+    r.avgHR > maxHR * 0.60 && r.avgHR < maxHR * 0.92
+  ).length;
+  // Boost regression weight with larger datasets (more data = more reliable slope)
+  const model4Weight = nValidRegression >= 300 ? 0.28 : nValidRegression >= 100 ? 0.22 : nValidRegression >= 20 ? 0.16 : 0.10;
   const model4 = maxHR > 0 ? vo2maxHRPaceRegression(regressionRuns, maxHR) : null;
 
   // ── MODEL 5: Fitness decay bridge ────────────────────────────────────────
-  // If we have a recent good VDOT but nothing current, apply decay
   let model5Vdot: number | null = null;
   if (model1Vdot) {
     const lastQualityDate = candidates.length > 0
@@ -336,14 +390,16 @@ export function estimateVO2max(
     model5Vdot = applyFitnessDecay(model1Vdot, daysSinceQuality, hasRecentEasy);
   }
 
-  // ── WEIGHTED MEAN ─────────────────────────────────────────────────────────
+  // ── WEIGHTED MEAN — race PBs dominate when present ───────────────────────
+  const hasRacePBs = racePBCandidates.length > 0;
+  const vdotWeight = hasRacePBs ? 0.70 : 0.45;
   type ModelEntry = [number | null, number, string];
   const models: ModelEntry[] = [
-    [model1Vdot,  0.50, "VDOT (pace)"],
-    [model4,      0.20, "HR-pace regression"],
-    [model2,      0.15, "Uth-Sørensen"],
-    [model3,      0.10, "Cooper"],
-    [model5Vdot,  0.05, "decay bridge"],
+    [model1Vdot,  vdotWeight,   "VDOT (pace)"],
+    [model4,      model4Weight, "HR-pace regression"],
+    [model2,      0.08,         "Uth-Sørensen"],
+    [model3,      0.05,         "Cooper"],
+    [model5Vdot,  0.04,         "decay bridge"],
   ];
 
   const available = models.filter(([v]) => v !== null && v > 35 && v < 90);

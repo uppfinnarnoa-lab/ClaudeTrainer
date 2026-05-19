@@ -75,6 +75,7 @@ export function ChatInterface({ provider, hasApiKey, monthlyBudget, currentSpend
       let buffer = "";
       let fullContent = "";
       let msgCost = 0;
+      let gotDone = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -85,22 +86,24 @@ export function ChatInterface({ provider, hasApiKey, monthlyBudget, currentSpend
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const data = JSON.parse(line.slice(6));
+          let data: Record<string, unknown>;
+          try { data = JSON.parse(line.slice(6)); } catch { continue; }
 
-          if (data.convId && !convId) setConvId(data.convId);
+          if (data.convId && !convId) setConvId(data.convId as string);
           if (data.text) {
-            fullContent += data.text;
+            fullContent += data.text as string;
             setMessages(prev => prev.map(m =>
               m.id === assistantId ? { ...m, content: fullContent } : m
             ));
           }
           if (data.done) {
-            msgCost = data.cost ?? 0;
+            gotDone = true;
+            msgCost = (data.cost as number) ?? 0;
             setSessionCost(s => s + msgCost);
             setTotalSpend(s => s + msgCost);
             setMessages(prev => prev.map(m =>
               m.id === assistantId
-                ? { ...m, cost: msgCost, tokens: (data.inputTokens ?? 0) + (data.outputTokens ?? 0), modelUsed: provider }
+                ? { ...m, cost: msgCost, tokens: ((data.inputTokens as number) ?? 0) + ((data.outputTokens as number) ?? 0), modelUsed: provider }
                 : m
             ));
           }
@@ -110,6 +113,15 @@ export function ChatInterface({ provider, hasApiKey, monthlyBudget, currentSpend
             ));
           }
         }
+      }
+
+      // Empty response fallback (e.g. safety filter or model returned nothing)
+      if (!gotDone || !fullContent.trim()) {
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId && !m.content
+            ? { ...m, content: "Inget svar mottaget. Kontrollera att din API-nyckel är korrekt och att budgeten inte är uppnådd." }
+            : m
+        ));
       }
     } finally {
       setStreaming(false);

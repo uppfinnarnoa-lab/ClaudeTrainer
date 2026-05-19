@@ -48,3 +48,12 @@ Determine which files apply to your task before starting:
 - Sport types and workout types are user-defined — never hardcode them in logic or UI
 - No comments unless the WHY is non-obvious to a future reader
 - No error handling for scenarios that cannot happen
+
+## Bug Audit Practice
+When performing a bug audit, **verify each suspected bug is real before fixing it**:
+1. Read the exact code path — do not assume the bug exists based on description alone
+2. Confirm the bug is actually reachable (e.g. check if the code path runs at all)
+3. Confirm the fix doesn't break existing correct behaviour (check all callers)
+4. Only mark a bug as fixed after verifying the corrected code path end-to-end
+5. If a "bug" turns out to be correct behaviour, document why it looks suspicious but is intentional
+This prevents fixing non-bugs and breaking things that already work correctly.

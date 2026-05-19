@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildPaceZones, estimateMaxHR } from "@/lib/fitness/zones";
+import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromRaces, estimateMaxHRFromThreshold } from "@/lib/fitness/zones";
 import { computeTSS, buildLoadCurve } from "@/lib/fitness/training-load";
-import { estimateVO2max } from "@/lib/fitness/vo2max";
+import { estimateVO2max, type RacePB } from "@/lib/fitness/vo2max";
 import { secPerKmToPaceStr } from "@/lib/fitness/paces";
 import { tsbLabel } from "@/lib/fitness/training-load";
 import { format, subDays, addDays, differenceInYears } from "date-fns";
@@ -14,10 +14,25 @@ type Act = {
   maxHeartrate: number | null; isRace: boolean; averageSpeed: number | null;
 };
 
+async function loadRacePBsForContext(userId: string): Promise<RacePB[]> {
+  const records = await prisma.raceRecord.findMany({
+    where: { userId, date: { gte: subDays(new Date(), 5 * 365) } },
+    select: { distanceM: true, time: true, date: true },
+    orderBy: { time: "asc" },
+  });
+  const best = new Map<number, RacePB>();
+  for (const r of records) {
+    const d = Math.round(r.distanceM);
+    if (!best.has(d) || best.get(d)!.timeSec > r.time)
+      best.set(d, { distanceM: r.distanceM, timeSec: r.time, date: r.date });
+  }
+  return [...best.values()];
+}
+
 export async function buildCoachContext(userId: string): Promise<CoachContext> {
   const now = new Date();
 
-  const [profile, activities, garminRecent, plannedWorkouts, missedWorkouts, upcomingRaceWorkouts] =
+  const [profile, activities, garminRecent, plannedWorkouts, missedWorkouts, upcomingRaceWorkouts, racePBs] =
     await Promise.all([
       prisma.athleteProfile.findUnique({ where: { userId } }),
       prisma.activity.findMany({
@@ -63,11 +78,23 @@ export async function buildCoachContext(userId: string): Promise<CoachContext> {
         orderBy: { date: "asc" },
         take: 5,
       }),
+      loadRacePBsForContext(userId),
     ]);
 
   // ── HR / zones ──────────────────────────────────────────────────────
   const maxHRs = (activities as Act[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
-  const maxHR = profile?.maxHeartRate ?? estimateMaxHR(maxHRs);
+  const raceMaxHRs = (activities as Act[])
+    .filter(a => a.isRace || /tävl|race|lopp|mila|stafett|sic\b|parkrun/i.test(a.name))
+    .flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
+  const observedMax = maxHRs.length > 0 ? Math.max(...maxHRs) : 200;
+  const thresholdHRs = (activities as Act[])
+    .filter(a => a.averageHeartrate && a.averageHeartrate > observedMax * 0.82
+      && a.sportType.toLowerCase().includes("run"))
+    .map(a => a.averageHeartrate!);
+  const maxHR = profile?.maxHeartRate
+    ?? estimateMaxHRFromRaces(raceMaxHRs)
+    ?? estimateMaxHRFromThreshold(thresholdHRs)
+    ?? estimateMaxHR(maxHRs);
   const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? 50;
   const hrZones = buildHRZones(maxHR, restHR);
   const hrZoneRanges: [number, number][] = [
@@ -78,9 +105,10 @@ export async function buildCoachContext(userId: string): Promise<CoachContext> {
   const vo2maxResult = estimateVO2max(
     (activities as Act[]).map(a => ({
       distanceM: a.distance, timeSec: a.movingTime,
-      avgHR: a.averageHeartrate, isRace: a.isRace, sportType: a.sportType,
+      avgHR: a.averageHeartrate, isRace: a.isRace,
+      sportType: a.sportType, name: a.name, startDate: a.startDate,
     })),
-    maxHR, restHR,
+    maxHR, restHR, racePBs,
   );
   const paceZones = buildPaceZones(vo2maxResult.vdot);
 

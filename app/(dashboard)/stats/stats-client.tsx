@@ -255,7 +255,7 @@ function LoadCard({ label, value, tip, color, sub }: { label: string; value: str
 
 function ZoneCalibrationButton() {
   const [loading, setLoading] = useState<"algo" | "ai" | null>(null);
-  const [result, setResult] = useState<{ insights?: string; maxHR?: number; vo2max?: number } | null>(null);
+  const [result, setResult] = useState<{ insights?: string | null; maxHR?: number; vo2max?: number; aiApplied?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const calibrate = useCallback(async (mode: "algorithmic" | "ai") => {
@@ -269,9 +269,10 @@ function ZoneCalibrationButton() {
         insights: data.aiInsights,
         maxHR: data.maxHR,
         vo2max: data.vo2max,
+        aiApplied: data.aiApplied,
       });
     } catch (e) {
-      setError(mode === "ai" ? "AI calibration failed — check API key in Settings." : "Calibration failed.");
+      setError(mode === "ai" ? "AI-kalibrering misslyckades — kontrollera API-nyckeln i Inställningar." : "Kalibrering misslyckades.");
       console.error(e);
     } finally {
       setLoading(null);
@@ -283,24 +284,24 @@ function ZoneCalibrationButton() {
       <div className="flex gap-2">
         <button onClick={() => calibrate("algorithmic")} disabled={!!loading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border hover:border-accent/40 hover:text-primary text-muted transition disabled:opacity-50"
-          title="Estimate HR zones from your training data (no AI)">
+          title="Estimera HR-zoner från träningsdata (ingen AI)">
           {loading === "algo"
-            ? <><Loader2 size={13} className="animate-spin" />Computing…</>
-            : <><RefreshCw size={13} />Estimate zones</>}
+            ? <><Loader2 size={13} className="animate-spin" />Beräknar…</>
+            : <><RefreshCw size={13} />Estimera zoner</>}
         </button>
         <button onClick={() => calibrate("ai")} disabled={!!loading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-accent/30 bg-accent/5 hover:bg-accent/10 text-accent transition disabled:opacity-50"
-          title="Estimate HR zones using AI analysis of your training data">
+          title="Låt AI analysera dina tävlingstider och hårda pass för att estimera zoner">
           {loading === "ai"
-            ? <><Loader2 size={13} className="animate-spin" />AI analysing…</>
-            : "AI estimate"}
+            ? <><Loader2 size={13} className="animate-spin" />AI analyserar…</>
+            : "AI-estimat"}
         </button>
       </div>
       {result && (
         <div className="text-xs text-muted bg-surface-2 rounded-xl px-3 py-2 space-y-1 max-w-sm">
           <p className="font-medium text-primary">
-            Zones updated — max HR {result.maxHR} bpm · VO2max {result.vo2max?.toFixed(1)}
-            <span className="text-muted font-normal"> · reload page to see updated charts</span>
+            {result.aiApplied ? "AI-zoner tillämpade" : "Zoner uppdaterade"} — max HR {result.maxHR} bpm · VO2max {result.vo2max?.toFixed(1)}
+            <a href="/stats" className="ml-2 text-accent hover:underline font-normal">ladda om sidan</a>
           </p>
           {result.insights && <p className="italic">{result.insights}</p>}
         </div>

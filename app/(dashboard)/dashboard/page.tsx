@@ -57,7 +57,7 @@ export default async function DashboardPage() {
     aggSince(userId, fourWeeksAgo),
     prisma.activity.findMany({
       where: { userId, startDate: { gte: subDays(now, 365) } },
-      select: { movingTime: true, averageHeartrate: true, maxHeartrate: true },
+      select: { movingTime: true, averageHeartrate: true, maxHeartrate: true, startDate: true },
       orderBy: { startDate: "asc" },
     }),
   ]);
@@ -67,11 +67,9 @@ export default async function DashboardPage() {
   const restHR = fitnessCache?.restHR ?? 50;
   const tssMap = new Map<string, number>();
   for (const a of recentActivities) {
-    // simplified daily TSS accumulation
-    const key = format(new Date(), "yyyy-MM-dd"); // today placeholder — we just need today's load
-    void key; // suppress unused
+    const key = format(a.startDate, "yyyy-MM-dd");
     const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR, restHR });
-    tssMap.set(format(new Date(), "yyyy-MM-dd"), (tssMap.get(format(new Date(), "yyyy-MM-dd")) ?? 0) + tss);
+    tssMap.set(key, (tssMap.get(key) ?? 0) + tss);
   }
   const loadCurve = buildLoadCurve(tssMap, subDays(now, 42), now);
   const todayLoad = loadCurve.at(-1) ?? { ctl: 0, atl: 0, tsb: 0 };

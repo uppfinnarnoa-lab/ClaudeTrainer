@@ -159,6 +159,7 @@ export async function POST(req: NextRequest) {
         controller.close();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error("[coach/chat] stream error:", msg);
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`));
         controller.close();
       }

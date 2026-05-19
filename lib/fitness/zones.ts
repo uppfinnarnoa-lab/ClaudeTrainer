@@ -118,6 +118,108 @@ export function ltBoundaries(zones: HRZones) {
   };
 }
 
+export interface LTBoundaries {
+  lt1HR: number;
+  lt2HR: number;
+  lt1PaceSecPerKm: number;
+  lt2PaceSecPerKm: number;
+  source: "race-pbs" | "default";
+}
+
+/**
+ * Estimate LT1 and LT2 from stored race PBs.
+ *
+ * Priority: HM → 10K → 5K for LT2.
+ * LT2 pace scaling factors from research:
+ *   HM pace ≈ LT2 pace (direct, most accurate)
+ *   10K pace × 1.065 ≈ LT2 pace
+ *   5K pace × 1.135 ≈ LT2 pace
+ *
+ * Convert pace → HR via linear regression if available.
+ * Falls back to % of maxHR if no regression.
+ */
+export function estimateLTFromRaces(
+  racePBs: Array<{ distanceM: number; timeSec: number }>,
+  maxHR: number,
+  restHR: number,
+  regression?: { slope: number; intercept: number } | null,
+): LTBoundaries {
+  // Sort PBs by distance
+  const byDist = [...racePBs].sort((a, b) => a.distanceM - b.distanceM);
+
+  function paceOf(distM: number): number | null {
+    // Find closest PB within ±8% of target distance
+    const match = byDist.find(r => Math.abs(r.distanceM - distM) / distM < 0.08);
+    return match ? match.timeSec / (match.distanceM / 1000) : null;
+  }
+
+  const hmPace  = paceOf(21097);
+  const tenKPace = paceOf(10000);
+  const fiveKPace = paceOf(5000);
+
+  let lt2PaceSecPerKm: number | null = null;
+  if (hmPace)     lt2PaceSecPerKm = hmPace;                  // HM pace ≈ LT2 directly
+  else if (tenKPace) lt2PaceSecPerKm = tenKPace * 1.065;     // 10K + 6.5%
+  else if (fiveKPace) lt2PaceSecPerKm = fiveKPace * 1.135;   // 5K + 13.5%
+
+  if (!lt2PaceSecPerKm) {
+    // No race data — fall back to standard % of maxHR
+    return {
+      lt1HR: Math.round(maxHR * 0.78),
+      lt2HR: Math.round(maxHR * 0.88),
+      lt1PaceSecPerKm: 0,
+      lt2PaceSecPerKm: 0,
+      source: "default",
+    };
+  }
+
+  const lt1PaceSecPerKm = lt2PaceSecPerKm * 1.10; // LT1 ≈ 10% slower than LT2
+
+  // Convert pace → HR via regression, or fall back to % of maxHR
+  function paceToHR(paceSecPerKm: number): number {
+    if (regression) {
+      const vMin = (1000 / paceSecPerKm) * 60;
+      const vo2AtPace = -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin;
+      const hr = (vo2AtPace - regression.intercept) / regression.slope;
+      if (hr > maxHR * 0.65 && hr < maxHR * 0.99) return Math.round(hr);
+    }
+    return null as unknown as number;
+  }
+
+  const lt2HRFromRegression = paceToHR(lt2PaceSecPerKm);
+  const lt1HRFromRegression = paceToHR(lt1PaceSecPerKm);
+
+  return {
+    lt1HR: lt1HRFromRegression || Math.round(maxHR * 0.78),
+    lt2HR: lt2HRFromRegression || Math.round(maxHR * 0.88),
+    lt1PaceSecPerKm: Math.round(lt1PaceSecPerKm),
+    lt2PaceSecPerKm: Math.round(lt2PaceSecPerKm),
+    source: "race-pbs",
+  };
+}
+
+/**
+ * Build HR zones anchored to data-derived LT1/LT2 instead of fixed percentages.
+ * Falls back to standard percentages when no race data is available.
+ */
+export function buildHRZonesFromLT(
+  lt: LTBoundaries,
+  maxHR: number,
+  restHR: number,
+): HRZones {
+  const lt1 = lt.lt1HR;
+  const lt2 = lt.lt2HR;
+  return {
+    z1: [restHR,    lt1 - 4],
+    z2: [lt1 - 4,  lt1],
+    z3: [lt1,      lt2],
+    z4: [lt2,      Math.min(lt2 + 8, maxHR - 2)],
+    z5: [Math.min(lt2 + 8, maxHR - 2), maxHR],
+    maxHR,
+    restHR,
+  };
+}
+
 // Classify an average HR value into a zone (1-5). Returns 0 if no HR.
 export function classifyHRZone(avgHR: number | null, zones: HRZones): number {
   if (!avgHR) return 0;

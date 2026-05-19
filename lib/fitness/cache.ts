@@ -11,7 +11,7 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold } from "./zones";
+import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces } from "./zones";
 import { estimateVO2max, type RacePB } from "./vo2max";
 import { subDays } from "date-fns";
 
@@ -118,14 +118,16 @@ export async function updateHRZones(userId: string) {
 
   const maxHRs = (activities as Act[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
   const observedMax = maxHRs.length > 0 ? Math.max(...maxHRs) : 200;
-
-  // Threshold-based estimation — use HR from hard runs
+  const raceMaxHRs = (activities as Act[])
+    .filter(a => a.isRace || /tävl|race|lopp|mila|stafett|sic\b|parkrun/i.test(a.name ?? ""))
+    .flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
   const thresholdHRs = (activities as Act[])
     .filter(a => a.averageHeartrate && a.averageHeartrate > observedMax * 0.82
       && a.sportType.toLowerCase().includes("run"))
     .map(a => a.averageHeartrate!);
 
   const maxHR = profile?.maxHeartRate
+    ?? estimateMaxHRFromRaces(raceMaxHRs)
     ?? estimateMaxHRFromThreshold(thresholdHRs)
     ?? estimateMaxHR(maxHRs);
   const restHR = profile?.restingHeartRate
