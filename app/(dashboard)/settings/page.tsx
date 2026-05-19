@@ -6,6 +6,7 @@ import { StravaConnectSection } from "./strava-connect";
 import { GarminConnectSection } from "./garmin-connect";
 import { AISettingsSection } from "./ai-settings";
 import { AthleteProfileForm } from "./athlete-profile";
+import { ChangePasswordForm } from "./change-password";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -88,6 +89,15 @@ export default async function SettingsPage() {
           primaryGoal: athleteProfile?.primaryGoal,
           yearsTraining: athleteProfile?.yearsTraining,
         }} />
+      </section>
+
+      {/* ── Change password ── */}
+      <section className="rounded-2xl bg-surface border border-border p-6 space-y-5">
+        <div>
+          <h2 className="font-semibold text-primary">Change password</h2>
+          <p className="text-xs text-muted mt-0.5">Update your login password</p>
+        </div>
+        <ChangePasswordForm />
       </section>
     </div>
   );

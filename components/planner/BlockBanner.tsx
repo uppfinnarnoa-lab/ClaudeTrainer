@@ -24,10 +24,13 @@ export function BlockBanner({ blocks, onNewBlock, onBlockClick }: Props) {
 
   return (
     <div className="border-b border-border bg-surface">
-      {/* Toggle bar */}
-      <button
+      {/* Toggle bar — use div to avoid button-in-button HTML violation */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-surface-2 transition-colors"
+        onKeyDown={e => e.key === "Enter" && setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-surface-2 transition-colors cursor-pointer"
       >
         <span className="font-semibold text-primary flex-1 text-left">Training Blocks</span>
         <button
@@ -38,7 +41,7 @@ export function BlockBanner({ blocks, onNewBlock, onBlockClick }: Props) {
           New block
         </button>
         {open ? <ChevronUp size={16} className="text-muted" /> : <ChevronDown size={16} className="text-muted" />}
-      </button>
+      </div>
 
       {open && (
         <div className="px-4 pb-3 space-y-1 max-h-56 overflow-y-auto">
