@@ -68,7 +68,8 @@ export function StravaConnectSection({
   }
 
   function copyCallback() {
-    navigator.clipboard.writeText(callbackUrl);
+    // Copy only the hostname — Strava rejects full URLs with paths/ports
+    navigator.clipboard.writeText(new URL(callbackUrl).hostname);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -78,14 +79,15 @@ export function StravaConnectSection({
       {/* Admin-only: setup guide + callback URL + credential form */}
       {isAdmin && <SetupGuide steps={STRAVA_GUIDE} defaultOpen={!credentialsSet} />}
 
-      {/* ── Step 1: Callback URL — admin only ── */}
+      {/* ── Step 1: Callback domain — admin only ── */}
       {isAdmin && <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-          Step 1 — Add this to Strava's "Authorization Callback Domain"
+          Step 1 — Paste this into Strava's "Authorization Callback Domain"
         </p>
         <div className="flex items-center gap-2">
-          <code className="flex-1 text-xs font-mono text-primary bg-surface px-3 py-2 rounded-lg border border-border break-all">
-            {callbackUrl}
+          {/* Show ONLY the hostname — Strava rejects full URLs with paths */}
+          <code className="flex-1 text-sm font-mono text-primary bg-surface px-3 py-2 rounded-lg border border-border">
+            {new URL(callbackUrl).hostname}
           </code>
           <button
             onClick={copyCallback}
@@ -96,11 +98,7 @@ export function StravaConnectSection({
           </button>
         </div>
         <p className="text-xs text-muted">
-          Set the <strong>Authorization Callback Domain</strong> to exactly{" "}
-          <code className="bg-surface px-1 rounded text-primary">
-            {new URL(callbackUrl).hostname}
-          </code>{" "}
-          in your Strava app settings — not the full URL.
+          Strava only accepts a bare domain — no <code className="bg-surface px-1 rounded">http://</code>, no port, no path.
         </p>
       </div>}
 
