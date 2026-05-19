@@ -175,23 +175,21 @@ export function estimateLTFromRaces(
 
   const lt1PaceSecPerKm = lt2PaceSecPerKm * 1.10; // LT1 ≈ 10% slower than LT2
 
-  // Convert pace → HR via regression, or fall back to % of maxHR
-  function paceToHR(paceSecPerKm: number): number {
-    if (regression) {
-      const vMin = (1000 / paceSecPerKm) * 60;
-      const vo2AtPace = -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin;
-      const hr = (vo2AtPace - regression.intercept) / regression.slope;
-      if (hr > maxHR * 0.65 && hr < maxHR * 0.99) return Math.round(hr);
-    }
-    return null as unknown as number;
+  // Convert pace → HR via regression; returns null when regression is unavailable or out of range
+  function paceToHR(paceSecPerKm: number): number | null {
+    if (!regression) return null;
+    const vMin = (1000 / paceSecPerKm) * 60;
+    const vo2AtPace = -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin;
+    const hr = (vo2AtPace - regression.intercept) / regression.slope;
+    return hr > maxHR * 0.65 && hr < maxHR * 0.99 ? Math.round(hr) : null;
   }
 
   const lt2HRFromRegression = paceToHR(lt2PaceSecPerKm);
   const lt1HRFromRegression = paceToHR(lt1PaceSecPerKm);
 
   return {
-    lt1HR: lt1HRFromRegression || Math.round(maxHR * 0.78),
-    lt2HR: lt2HRFromRegression || Math.round(maxHR * 0.88),
+    lt1HR: lt1HRFromRegression ?? Math.round(maxHR * 0.78),
+    lt2HR: lt2HRFromRegression ?? Math.round(maxHR * 0.88),
     lt1PaceSecPerKm: Math.round(lt1PaceSecPerKm),
     lt2PaceSecPerKm: Math.round(lt2PaceSecPerKm),
     source: "race-pbs",

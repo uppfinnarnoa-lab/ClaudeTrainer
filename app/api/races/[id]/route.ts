@@ -4,10 +4,11 @@ import { prisma } from "@/lib/db/prisma";
 import { z } from "zod";
 
 const updateSchema = z.object({
-  time:      z.number().int().positive().optional(),
-  date:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  eventName: z.string().max(120).optional().nullable(),
-  notes:     z.string().max(500).optional().nullable(),
+  time:             z.number().int().positive().optional(),
+  date:             z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  eventName:        z.string().max(120).optional().nullable(),
+  notes:            z.string().max(500).optional().nullable(),
+  stravaActivityId: z.string().optional().nullable(),
 });
 
 async function owned(id: string, userId: string) {

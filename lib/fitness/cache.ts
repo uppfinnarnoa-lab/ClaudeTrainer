@@ -11,8 +11,8 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces } from "./zones";
-import { estimateVO2max, type RacePB } from "./vo2max";
+import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces } from "./zones";
+import { estimateVO2max, buildHRPaceRegressionParams, type RacePB } from "./vo2max";
 import { subDays } from "date-fns";
 
 type Act = {
@@ -134,12 +134,29 @@ export async function updateHRZones(userId: string) {
     ?? garminRecent.at(-1)?.restingHR
     ?? 50;
 
-  const hrZones = buildHRZones(maxHR, restHR);
+  const racePBs = await loadRacePBs(userId);
+
+  // Build HR-pace regression params for pace→HR conversion in LT estimation
+  const regressionRuns = (activities as Act[])
+    .filter(a => a.averageHeartrate && a.distance >= 3000 && a.movingTime > 0
+      && /run|trail/i.test(a.sportType)
+      && !/intervall|interval|fartlek|tisdagsbana|bana\b/i.test(a.name ?? ""))
+    .map(a => ({
+      avgHR: a.averageHeartrate!,
+      avgPaceSecPerKm: a.movingTime / (a.distance / 1000),
+    }));
+  const regression = buildHRPaceRegressionParams(regressionRuns, maxHR);
+
+  // Estimate LT1/LT2 from race PBs + regression for data-driven zones
+  const lt = estimateLTFromRaces(racePBs, maxHR, restHR, regression);
+  const hrZones = lt.source === "race-pbs"
+    ? buildHRZonesFromLT(lt, maxHR, restHR)
+    : buildHRZones(maxHR, restHR);
   const thresholdHR = Math.round((hrZones.z4[0] + hrZones.z4[1]) / 2);
 
-  const zonesJson = buildHRZonesJson(maxHR, restHR);
-
-  const racePBs = await loadRacePBs(userId);
+  const zonesJson = {
+    z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5,
+  };
 
   // Also recompute VO2max with the updated maxHR
   const vo2maxResult = estimateVO2max(

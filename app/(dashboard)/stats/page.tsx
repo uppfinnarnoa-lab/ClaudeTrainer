@@ -22,7 +22,7 @@ export default async function StatsPage() {
   const [profile, activities, garminRecent, allRacePBs] = await Promise.all([
     prisma.athleteProfile.findUnique({ where: { userId } }),
     prisma.activity.findMany({
-      where: { userId, startDate: { gte: subDays(new Date(), 730) } },
+      where: { userId, startDate: { gte: subDays(new Date(), 5 * 365) } },
       orderBy: { startDate: "asc" },
       select: {
         id: true, sportType: true, startDate: true, name: true,

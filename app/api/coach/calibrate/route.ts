@@ -114,20 +114,14 @@ Baserat på tävlingstiderna (HM-tempo ≈ LT2-tempo, 10K-tempo ≈ LT2+5%), obs
 2. Estimera LT2 (anaerob tröskel, ~4 mmol/L laktat, ≈ halvmarathontempo)
 3. Beräkna 5 zoner med olikbreda gränser förankrade i LT1/LT2
 
-Svara ENBART med giltig JSON, inga förklaringar utanför JSON:
-{
-  "max_hr": ${result.maxHR},
-  "lt1_hr": <heltal>,
-  "lt2_hr": <heltal>,
-  "zones": {
-    "z1": [${result.restHR}, <lt1_hr - 8>],
-    "z2": [<lt1_hr - 8>, <lt1_hr>],
-    "z3": [<lt1_hr>, <lt2_hr>],
-    "z4": [<lt2_hr>, <lt2_hr + 7>],
-    "z5": [<lt2_hr + 7>, ${result.maxHR}]
-  },
-  "reasoning": "<2-3 meningar om varför dessa värden>"
-}`;
+Beräkna konkreta HR-värden och returnera ENBART giltig JSON (inga kommentarer, inga förklaringar utanför JSON).
+Zonerna ska byggas som: z1=[restHR, lt1-8], z2=[lt1-8, lt1], z3=[lt1, lt2], z4=[lt2, lt2+7], z5=[lt2+7, maxHR].
+Alla värden ska vara heltal.
+
+Exempel på korrekt format (ersätt med dina beräknade värden):
+{"max_hr":190,"lt1_hr":152,"lt2_hr":167,"zones":{"z1":[47,144],"z2":[144,152],"z3":[152,167],"z4":[167,174],"z5":[174,190]},"reasoning":"LT2 estimerades från 10K-PBn..."}
+
+Din JSON med rätt värden:`;
 
   let aiJson: { max_hr: number; lt1_hr: number; lt2_hr: number; zones: Record<string, [number, number]>; reasoning: string } | null = null;
   let aiInsights = "";
