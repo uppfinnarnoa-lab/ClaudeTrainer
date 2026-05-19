@@ -289,7 +289,7 @@ function ZoneCalibrationButton() {
           title="Estimate HR zones using AI analysis of your training data">
           {loading === "ai"
             ? <><Loader2 size={13} className="animate-spin" />AI analysing…</>
-            : "✨ AI estimate"}
+            : "AI estimate"}
         </button>
       </div>
       {result && (

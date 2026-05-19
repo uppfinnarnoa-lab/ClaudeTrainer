@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { TrendingUp, AlertTriangle, BarChart3, Footprints } from "lucide-react";
 import { prisma } from "@/lib/db/prisma";
 import { startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
 import { generateInsights } from "@/lib/fitness/insights";
@@ -106,7 +107,7 @@ export default async function DashboardPage() {
         {/* This week */}
         <StatCard label="This week" primary={hasActivities ? formatKm(weekData.km) : "—"}
           sub={hasActivities ? `${formatDuration(weekData.sec)} · ${weekData.count} sessions` : "No activities yet"}
-          detail={hasRun && runWeek.km > 0 ? `🏃 ${formatKm(runWeek.km)} running` : undefined} />
+          detail={hasRun && runWeek.km > 0 ? `Run: ${formatKm(runWeek.km)}` : undefined} />
 
         {/* This month */}
         <StatCard label="This month" primary={hasActivities ? formatKm(monthData.km) : "—"}
@@ -115,7 +116,7 @@ export default async function DashboardPage() {
         {/* YTD total */}
         <StatCard label="Year to date" primary={hasActivities ? formatKm(ytdData.km) : "—"}
           sub={hasActivities ? formatDuration(ytdData.sec) : "Sync Strava to see data"}
-          detail={hasRun ? `🏃 ${formatKm(runYtd.km)} · ${formatDuration(runYtd.sec)}` : undefined}
+          detail={hasRun ? `Run: ${formatKm(runYtd.km)} · ${formatDuration(runYtd.sec)}` : undefined}
           accent />
 
         {/* Fitness */}
@@ -133,14 +134,18 @@ export default async function DashboardPage() {
         <div className="space-y-2">
           {insights.map((ins, i) => (
             <div key={i} className={`flex items-start gap-3 rounded-xl px-4 py-3 text-sm border ${
-              ins.type === "positive" ? "border-accent/20 bg-accent/5 text-primary"
-              : ins.type === "warning" ? "border-warning/20 bg-warning/5 text-primary"
+              ins.type === "positive" ? "border-accent/20 bg-accent/5"
+              : ins.type === "warning" ? "border-warning/20 bg-warning/5"
               : "border-border bg-surface"
             }`}>
-              <span className="shrink-0 mt-0.5">
-                {ins.type === "positive" ? "✅" : ins.type === "warning" ? "⚠️" : "📊"}
+              <span className={`shrink-0 mt-0.5 ${ins.type === "positive" ? "text-accent" : ins.type === "warning" ? "text-warning" : "text-muted"}`}>
+                {ins.type === "positive"
+                  ? <TrendingUp size={15} />
+                  : ins.type === "warning"
+                  ? <AlertTriangle size={15} />
+                  : <BarChart3 size={15} />}
               </span>
-              <p className="text-sm leading-snug">{ins.text}</p>
+              <p className="text-sm leading-snug text-primary">{ins.text}</p>
             </div>
           ))}
         </div>
@@ -183,7 +188,11 @@ function StatCard({ label, primary, sub, detail, accent }: {
       <p className="text-xs font-medium text-muted uppercase tracking-wide">{label}</p>
       <p className="mt-1.5 text-2xl font-semibold font-mono text-primary leading-none">{primary}</p>
       <p className="text-xs text-muted mt-1">{sub}</p>
-      {detail && <p className="text-xs text-accent mt-1.5 font-medium">{detail}</p>}
+      {detail && (
+        <p className="flex items-center gap-1 text-xs text-accent mt-1.5 font-medium">
+          <Footprints size={11} />{detail}
+        </p>
+      )}
     </div>
   );
 }

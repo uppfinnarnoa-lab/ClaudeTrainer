@@ -12,7 +12,7 @@ const BLOCK_TYPES = [
   { value: "peak",   label: "Peak",   desc: "Race-specific quality sessions" },
   { value: "taper",  label: "Taper",  desc: "Volume reduction, maintain intensity" },
   { value: "custom", label: "Custom", desc: "Define your own focus" },
-  { value: "race",   label: "Race 🏁", desc: "Competition — shown as a marker in the timeline" },
+  { value: "race",   label: "Race",   desc: "Competition — shown as a marker in the timeline" },
 ] as const;
 
 const PRESET_COLORS = [
