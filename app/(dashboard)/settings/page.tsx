@@ -26,10 +26,14 @@ export default async function SettingsPage() {
       prisma.stravaAccount.findUnique({ where: { userId } }),
       prisma.garminAccount.findUnique({ where: { userId } }),
       prisma.aISettings.findUnique({ where: { userId } }),
-      prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { name: true, isAdmin: true } }),
       prisma.athleteProfile.findUnique({ where: { userId } }),
+      // App-level API config — read from this user's record
+      // (admin sets it; non-admins get it from env vars via lib/config.ts)
       prisma.appConfig.findUnique({ where: { userId } }),
     ]);
+
+  const isAdmin = !!user?.isAdmin;
 
   // Compute Strava auth URL — null if credentials not configured
   const hasStravaClientId     = !!(appConfig?.stravaClientId     || process.env.STRAVA_CLIENT_ID);
@@ -64,6 +68,7 @@ export default async function SettingsPage() {
           totalSynced={stravaAccount?.totalSynced ?? 0}
           hasClientId={hasStravaClientId}
           hasClientSecret={hasStravaClientSecret}
+          isAdmin={isAdmin}
         />
       </IntegrationCard>
 
@@ -75,6 +80,7 @@ export default async function SettingsPage() {
           callbackUrl={garminCallback}
           hasClientId={hasGarminClientId}
           hasClientSecret={hasGarminClientSecret}
+          isAdmin={isAdmin}
         />
       </IntegrationCard>
 

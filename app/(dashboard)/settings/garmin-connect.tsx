@@ -10,9 +10,10 @@ interface Props {
   callbackUrl:     string;
   hasClientId:     boolean;
   hasClientSecret: boolean;
+  isAdmin:         boolean;
 }
 
-export function GarminConnectSection({ connected, authUrl, callbackUrl, hasClientId, hasClientSecret }: Props) {
+export function GarminConnectSection({ connected, authUrl, callbackUrl, hasClientId, hasClientSecret, isAdmin }: Props) {
   const [clientId,     setClientId]     = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [showSecret,   setShowSecret]   = useState(false);
@@ -47,22 +48,25 @@ export function GarminConnectSection({ connected, authUrl, callbackUrl, hasClien
 
   return (
     <div className="space-y-5">
-      <SetupGuide steps={GARMIN_GUIDE} defaultOpen={!credentialsSet} />
+      {/* Admin-only sections */}
+      {isAdmin && <SetupGuide steps={GARMIN_GUIDE} defaultOpen={!credentialsSet} />}
 
-      {/* Callback URL */}
-      <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wide">Redirect URI for Garmin portal</p>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 text-xs font-mono text-primary bg-surface px-3 py-2 rounded-lg border border-border break-all">
-            {callbackUrl}
-          </code>
-          <button onClick={copyCallback} className="shrink-0 p-2 rounded-lg border border-border hover:bg-surface transition text-muted hover:text-primary">
-            {copied ? <CheckCircle size={15} className="text-accent" /> : <Copy size={15} />}
-          </button>
+      {isAdmin && (
+        <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">Redirect URI for Garmin portal</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs font-mono text-primary bg-surface px-3 py-2 rounded-lg border border-border break-all">
+              {callbackUrl}
+            </code>
+            <button onClick={copyCallback} className="shrink-0 p-2 rounded-lg border border-border hover:bg-surface transition text-muted hover:text-primary">
+              {copied ? <CheckCircle size={15} className="text-accent" /> : <Copy size={15} />}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Credentials */}
+      {/* Credentials — admin only */}
+      {isAdmin && (
       <div className="space-y-3">
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Garmin Health API credentials
@@ -96,9 +100,10 @@ export function GarminConnectSection({ connected, authUrl, callbackUrl, hasClien
           {saved ? "Saved ✓" : "Save credentials"}
         </button>
       </div>
+      )}
 
       {/* Connect button */}
-      {credentialsSet && !connected && (
+      {(isAdmin ? credentialsSet : hasClientId) && !connected && (
         <div className="space-y-2">
           <p className="text-xs font-semibold text-muted uppercase tracking-wide">Connect your account</p>
           <a href={authUrl ?? "#"}

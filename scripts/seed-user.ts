@@ -20,9 +20,13 @@ async function main() {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  // First user created is always admin
+  const existingCount = await prisma.user.count();
+  const isAdmin = existingCount === 0;
   const user = await prisma.user.create({
-    data: { email, passwordHash, name },
+    data: { email, passwordHash, name, isAdmin },
   });
+  if (isAdmin) console.log("  (first user — granted admin)");
 
   // Seed default sport categories
   const sports = [

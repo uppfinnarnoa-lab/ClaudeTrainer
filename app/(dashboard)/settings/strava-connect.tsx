@@ -8,16 +8,17 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   connected:    boolean;
-  authUrl:      string | null;   // null if credentials not yet configured
+  authUrl:      string | null;
   callbackUrl:  string;
   lastSyncAt:   string | null;
   totalSynced:  number;
   hasClientId:  boolean;
   hasClientSecret: boolean;
+  isAdmin:      boolean;
 }
 
 export function StravaConnectSection({
-  connected, authUrl, callbackUrl, lastSyncAt, totalSynced, hasClientId, hasClientSecret,
+  connected, authUrl, callbackUrl, lastSyncAt, totalSynced, hasClientId, hasClientSecret, isAdmin,
 }: Props) {
   const [clientId,     setClientId]     = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -74,10 +75,11 @@ export function StravaConnectSection({
 
   return (
     <div className="space-y-5">
-      <SetupGuide steps={STRAVA_GUIDE} defaultOpen={!credentialsSet} />
+      {/* Admin-only: setup guide + callback URL + credential form */}
+      {isAdmin && <SetupGuide steps={STRAVA_GUIDE} defaultOpen={!credentialsSet} />}
 
-      {/* ── Step 1: Callback URL ── */}
-      <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
+      {/* ── Step 1: Callback URL — admin only ── */}
+      {isAdmin && <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Step 1 — Add this to Strava's "Authorization Callback Domain"
         </p>
@@ -100,59 +102,61 @@ export function StravaConnectSection({
           </code>{" "}
           in your Strava app settings — not the full URL.
         </p>
-      </div>
+      </div>}
 
-      {/* ── Step 2: Enter credentials ── */}
-      <div className="space-y-3">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-          Step 2 — Paste your Strava API credentials
-          {credentialsSet && <span className="ml-2 text-accent normal-case font-medium">✓ Saved</span>}
-        </p>
+      {/* ── Step 2: Enter credentials — admin only ── */}
+      {isAdmin && (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+            Step 2 — Paste your Strava API credentials
+            {credentialsSet && <span className="ml-2 text-accent normal-case font-medium">✓ Saved</span>}
+          </p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-muted mb-1 block">Client ID</label>
-            <input
-              type="text"
-              value={clientId}
-              onChange={e => setClientId(e.target.value)}
-              placeholder={hasClientId ? "Already saved — paste to update" : "e.g. 12345"}
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted mb-1 block">Client Secret</label>
-            <div className="relative">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted mb-1 block">Client ID</label>
               <input
-                type={showSecret ? "text" : "password"}
-                value={clientSecret}
-                onChange={e => setClientSecret(e.target.value)}
-                placeholder={hasClientSecret ? "Already saved — paste to update" : "Paste client secret"}
-                className={`${inputCls} pr-10`}
+                type="text"
+                value={clientId}
+                onChange={e => setClientId(e.target.value)}
+                placeholder={hasClientId ? "Already saved — paste to update" : "e.g. 12345"}
+                className={inputCls}
               />
-              <button
-                type="button"
-                onClick={() => setShowSecret(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
-              >
-                {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
+            </div>
+            <div>
+              <label className="text-xs text-muted mb-1 block">Client Secret</label>
+              <div className="relative">
+                <input
+                  type={showSecret ? "text" : "password"}
+                  value={clientSecret}
+                  onChange={e => setClientSecret(e.target.value)}
+                  placeholder={hasClientSecret ? "Already saved — paste to update" : "Paste client secret"}
+                  className={`${inputCls} pr-10`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
+                >
+                  {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
           </div>
+
+          <button
+            onClick={saveCredentials}
+            disabled={saving || (!clientId.trim() && !clientSecret.trim())}
+            className="inline-flex items-center gap-2 rounded-xl bg-surface border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-surface-2 disabled:opacity-40 transition"
+          >
+            {saving && <Loader2 size={14} className="animate-spin" />}
+            {saved ? "Saved ✓" : "Save credentials"}
+          </button>
         </div>
+      )}
 
-        <button
-          onClick={saveCredentials}
-          disabled={saving || (!clientId.trim() && !clientSecret.trim())}
-          className="inline-flex items-center gap-2 rounded-xl bg-surface border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-surface-2 disabled:opacity-40 transition"
-        >
-          {saving && <Loader2 size={14} className="animate-spin" />}
-          {saved ? "Saved ✓" : "Save credentials"}
-        </button>
-      </div>
-
-      {/* ── Step 3: Connect / Sync ── */}
-      {credentialsSet && (
+      {/* ── Connect / Sync ── */}
+      {(isAdmin ? credentialsSet : hasClientId) && (
         <div className="space-y-4">
           <p className="text-xs font-semibold text-muted uppercase tracking-wide">
             Step 3 — Connect your Strava account

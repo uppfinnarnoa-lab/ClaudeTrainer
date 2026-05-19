@@ -19,7 +19,15 @@ export async function getCredentials(userId: string): Promise<AppCredentials> {
     return _cache.creds;
   }
 
-  const config = await prisma.appConfig.findUnique({ where: { userId } });
+  // Try user's own config first, then fall back to the admin's config
+  let config = await prisma.appConfig.findUnique({ where: { userId } });
+  if (!config) {
+    // Non-admin users use the shared admin-level API credentials
+    const adminUser = await prisma.user.findFirst({ where: { isAdmin: true }, select: { id: true } });
+    if (adminUser && adminUser.id !== userId) {
+      config = await prisma.appConfig.findUnique({ where: { userId: adminUser.id } });
+    }
+  }
 
   const creds: AppCredentials = {
     stravaClientId:     config?.stravaClientId || process.env.STRAVA_CLIENT_ID || "",
