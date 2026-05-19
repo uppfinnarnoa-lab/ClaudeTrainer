@@ -14,25 +14,23 @@ export function Logo({ size = 32, className }: Props) {
       className={className}
       aria-label="TrainingLab"
     >
-      {/* Background */}
-      <rect width="40" height="40" rx="9" fill="#1A1D27" />
-      {/* Bold crossbar */}
-      <rect x="4" y="9" width="32" height="7" rx="1.5" fill="#6EE7B7" />
-      {/* Stem upper */}
-      <rect x="17" y="16" width="6" height="7" fill="#6EE7B7" />
-      {/* Stem lower */}
-      <rect x="17" y="29" width="6" height="7" rx="1.5" fill="#6EE7B7" />
-      {/* Cutout window */}
-      <rect x="17" y="23" width="6" height="6" fill="#1A1D27" />
-      {/* Pulse line through cutout */}
-      <polyline
-        points="17,26 18.5,24 20,29 21.5,24 23,26"
-        stroke="#6EE7B7"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
+      <defs>
+        <mask id="pulse-cut">
+          <rect width="40" height="40" fill="white" />
+          <polyline
+            points="16,26 18,22 20,31 22,22 24,26"
+            stroke="black"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </mask>
+      </defs>
+      <rect width="40" height="40" rx="9" fill="#0F1117" />
+      <g mask="url(#pulse-cut)" fill="#6EE7B7">
+        <rect x="4" y="9" width="32" height="7" rx="1.5" />
+        <rect x="16" y="16" width="8" height="21" rx="1.5" />
+      </g>
     </svg>
   );
 }
