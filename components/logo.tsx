@@ -12,16 +12,9 @@ export function Logo({ size = 32, className }: Props) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      aria-label="TrainingLab"
+      aria-label="T"
     >
       <defs>
-        {/*
-          Activity-icon waveform running horizontally through the entire T stem.
-          Midline y=27.5 (center of stem y=17–38).
-          Extends from x=7 to x=33 — clearly exits both left edge (x=13)
-          and right edge (x=27) of the stem, creating open channels on both sides.
-          Waveform peak/valley centered at x=20 (horizontal center of stem).
-        */}
         <mask id="act-cut">
           <rect width="40" height="40" fill="white" />
           <polyline
@@ -34,7 +27,6 @@ export function Logo({ size = 32, className }: Props) {
           />
         </mask>
       </defs>
-      {/* Bold T — single compound path, no seam, transparent background */}
       <path
         d="M2,7 H38 V17 H27 V38 H13 V17 H2 Z"
         fill="#6EE7B7"
@@ -44,15 +36,21 @@ export function Logo({ size = 32, className }: Props) {
   );
 }
 
+/**
+ * Wordmark: [T-icon]rainingLab
+ * The icon replaces the letter T in "Training".
+ */
 export function LogoWordmark({ size = 32, className }: Props) {
+  const fontSize = size * 0.52;
+
   return (
-    <div className={`flex items-center gap-2.5 ${className ?? ""}`}>
+    <div className={`flex items-center ${className ?? ""}`} style={{ gap: size * 0.04 }}>
       <Logo size={size} />
       <span
-        className="font-semibold tracking-tight text-primary"
-        style={{ fontSize: size * 0.55 }}
+        className="font-semibold tracking-tight text-primary leading-none"
+        style={{ fontSize }}
       >
-        Training<span className="text-accent">Lab</span>
+        raining<span className="text-accent">Lab</span>
       </span>
     </div>
   );
