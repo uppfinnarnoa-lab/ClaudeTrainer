@@ -27,6 +27,7 @@ model User {
   conversations      Conversation[]
   aiSettings         AISettings?
   athleteProfile     AthleteProfile?
+  appConfig          AppConfig?
   sessions           Session[]
 }
 
@@ -318,4 +319,16 @@ model AISettings {
   currentMonthSpendUsd Float @default(0.0)
   spendResetAt DateTime @default(now())
   user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Integration credentials stored in DB — lets users configure everything via the UI
+// without editing .env files. Env vars are used as fallback if these are empty.
+model AppConfig {
+  id                  String  @id @default(cuid())
+  userId              String  @unique
+  stravaClientId      String?
+  stravaClientSecret  String?
+  garminClientId      String?
+  garminClientSecret  String?
+  user                User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

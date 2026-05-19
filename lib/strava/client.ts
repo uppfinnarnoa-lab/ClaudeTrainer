@@ -1,28 +1,32 @@
 import { prisma } from "@/lib/db/prisma";
+import { getCredentials } from "@/lib/config";
 
 const STRAVA_BASE = "https://www.strava.com/api/v3";
-const TOKEN_URL = "https://www.strava.com/oauth/token";
+const TOKEN_URL   = "https://www.strava.com/oauth/token";
 
-export function getStravaAuthUrl(state?: string): string {
+export async function getStravaAuthUrl(userId: string, redirectUri: string): Promise<string> {
+  const creds = await getCredentials(userId);
+  if (!creds.stravaClientId) throw new Error("STRAVA_NOT_CONFIGURED");
   const params = new URLSearchParams({
-    client_id: process.env.STRAVA_CLIENT_ID!,
-    redirect_uri: process.env.STRAVA_REDIRECT_URI!,
+    client_id:     creds.stravaClientId,
+    redirect_uri:  redirectUri,
     response_type: "code",
-    scope: "read,activity:read_all",
-    ...(state ? { state } : {}),
+    scope:         "read,activity:read_all",
   });
   return `https://www.strava.com/oauth/authorize?${params}`;
 }
 
-export async function exchangeStravaCode(code: string) {
+export async function exchangeStravaCode(userId: string, code: string, redirectUri: string) {
+  const creds = await getCredentials(userId);
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      client_id:     creds.stravaClientId,
+      client_secret: creds.stravaClientSecret,
       code,
-      grant_type: "authorization_code",
+      redirect_uri:  redirectUri,
+      grant_type:    "authorization_code",
     }),
   });
   if (!res.ok) throw new Error(`Strava token exchange failed: ${res.status}`);
@@ -30,21 +34,22 @@ export async function exchangeStravaCode(code: string) {
 }
 
 export async function refreshStravaToken(userId: string) {
-  const account = await prisma.stravaAccount.findUnique({ where: { userId } });
+  const [account, creds] = await Promise.all([
+    prisma.stravaAccount.findUnique({ where: { userId } }),
+    getCredentials(userId),
+  ]);
   if (!account) throw new Error("No Strava account");
 
-  if (account.expiresAt > new Date(Date.now() + 60_000)) {
-    return account.accessToken;
-  }
+  if (account.expiresAt > new Date(Date.now() + 60_000)) return account.accessToken;
 
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: process.env.STRAVA_CLIENT_ID,
-      client_secret: process.env.STRAVA_CLIENT_SECRET,
+      client_id:     creds.stravaClientId,
+      client_secret: creds.stravaClientSecret,
       refresh_token: account.refreshToken,
-      grant_type: "refresh_token",
+      grant_type:    "refresh_token",
     }),
   });
   if (!res.ok) throw new Error(`Strava token refresh failed: ${res.status}`);
@@ -53,9 +58,9 @@ export async function refreshStravaToken(userId: string) {
   await prisma.stravaAccount.update({
     where: { userId },
     data: {
-      accessToken: data.access_token,
+      accessToken:  data.access_token,
       refreshToken: data.refresh_token,
-      expiresAt: new Date(data.expires_at * 1000),
+      expiresAt:    new Date(data.expires_at * 1000),
     },
   });
   return data.access_token as string;

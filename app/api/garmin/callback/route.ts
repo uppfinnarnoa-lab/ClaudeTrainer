@@ -10,21 +10,23 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
   if (!code) return NextResponse.redirect(new URL("/settings?garmin=denied", req.url));
 
+  const redirectUri = `${req.nextUrl.origin}/api/garmin/callback`;
+
   try {
-    const data = await exchangeGarminCode(code);
+    const data = await exchangeGarminCode(session.user.id, code, redirectUri);
 
     await prisma.garminAccount.upsert({
-      where: { userId: session.user.id },
+      where:  { userId: session.user.id },
       create: {
-        userId: session.user.id,
-        accessToken: data.access_token,
+        userId:       session.user.id,
+        accessToken:  data.access_token,
         refreshToken: data.refresh_token,
-        expiresAt: new Date(Date.now() + data.expires_in * 1000),
+        expiresAt:    new Date(Date.now() + data.expires_in * 1000),
       },
       update: {
-        accessToken: data.access_token,
+        accessToken:  data.access_token,
         refreshToken: data.refresh_token,
-        expiresAt: new Date(Date.now() + data.expires_in * 1000),
+        expiresAt:    new Date(Date.now() + data.expires_in * 1000),
       },
     });
 

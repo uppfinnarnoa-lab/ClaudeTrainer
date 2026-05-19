@@ -1,20 +1,52 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, ExternalLink, Loader2 } from "lucide-react";
+import { RefreshCw, ExternalLink, Loader2, Eye, EyeOff, CheckCircle, Copy } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { SetupGuide, STRAVA_GUIDE } from "@/components/setup-guide";
+import { cn } from "@/lib/utils";
 
 interface Props {
-  connected: boolean;
-  authUrl: string;
-  lastSyncAt: string | null;
-  totalSynced: number;
+  connected:    boolean;
+  authUrl:      string | null;   // null if credentials not yet configured
+  callbackUrl:  string;
+  lastSyncAt:   string | null;
+  totalSynced:  number;
+  hasClientId:  boolean;
+  hasClientSecret: boolean;
 }
 
-export function StravaConnectSection({ connected, authUrl, lastSyncAt, totalSynced }: Props) {
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ synced?: number; error?: string } | null>(null);
+export function StravaConnectSection({
+  connected, authUrl, callbackUrl, lastSyncAt, totalSynced, hasClientId, hasClientSecret,
+}: Props) {
+  const [clientId,     setClientId]     = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [showSecret,   setShowSecret]   = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [syncing,      setSyncing]      = useState(false);
+  const [syncResult,   setSyncResult]   = useState<{ synced?: number; error?: string } | null>(null);
+  const [copied,       setCopied]       = useState(false);
+
+  const credentialsSet = hasClientId && hasClientSecret;
+
+  async function saveCredentials() {
+    if (!clientId.trim() || !clientSecret.trim()) return;
+    setSaving(true);
+    await fetch("/api/settings/credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stravaClientId:     clientId.trim(),
+        stravaClientSecret: clientSecret.trim(),
+      }),
+    });
+    setSaving(false);
+    setSaved(true);
+    setClientId(""); setClientSecret("");
+    // Reload to refresh authUrl
+    window.location.reload();
+  }
 
   async function handleSync(full = false) {
     setSyncing(true);
@@ -34,62 +66,158 @@ export function StravaConnectSection({ connected, authUrl, lastSyncAt, totalSync
     }
   }
 
+  function copyCallback() {
+    navigator.clipboard.writeText(callbackUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
-    <div className="space-y-4">
-      <SetupGuide steps={STRAVA_GUIDE} defaultOpen={!connected} />
+    <div className="space-y-5">
+      <SetupGuide steps={STRAVA_GUIDE} defaultOpen={!credentialsSet} />
 
-      {!connected ? (
-        <a
-          href={authUrl}
-          className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-600 transition"
-        >
-          <ExternalLink size={15} />
-          Connect with Strava
-        </a>
-      ) : (
-        <>
-          <div className="flex items-center gap-6 text-sm">
-            <div>
-              <p className="text-muted text-xs">Activities synced</p>
-              <p className="font-semibold font-mono text-primary">{totalSynced.toLocaleString()}</p>
+      {/* ── Step 1: Callback URL ── */}
+      <div className="rounded-xl border border-border bg-surface-2 p-4 space-y-2">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+          Step 1 — Add this to Strava's "Authorization Callback Domain"
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-xs font-mono text-primary bg-surface px-3 py-2 rounded-lg border border-border break-all">
+            {callbackUrl}
+          </code>
+          <button
+            onClick={copyCallback}
+            className="shrink-0 p-2 rounded-lg border border-border hover:bg-surface transition text-muted hover:text-primary"
+            title="Copy"
+          >
+            {copied ? <CheckCircle size={15} className="text-accent" /> : <Copy size={15} />}
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          Set the <strong>Authorization Callback Domain</strong> to exactly{" "}
+          <code className="bg-surface px-1 rounded text-primary">
+            {new URL(callbackUrl).hostname}
+          </code>{" "}
+          in your Strava app settings — not the full URL.
+        </p>
+      </div>
+
+      {/* ── Step 2: Enter credentials ── */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+          Step 2 — Paste your Strava API credentials
+          {credentialsSet && <span className="ml-2 text-accent normal-case font-medium">✓ Saved</span>}
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-muted mb-1 block">Client ID</label>
+            <input
+              type="text"
+              value={clientId}
+              onChange={e => setClientId(e.target.value)}
+              placeholder={hasClientId ? "Already saved — paste to update" : "e.g. 12345"}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted mb-1 block">Client Secret</label>
+            <div className="relative">
+              <input
+                type={showSecret ? "text" : "password"}
+                value={clientSecret}
+                onChange={e => setClientSecret(e.target.value)}
+                placeholder={hasClientSecret ? "Already saved — paste to update" : "Paste client secret"}
+                className={`${inputCls} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowSecret(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary"
+              >
+                {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
             </div>
-            {lastSyncAt && (
-              <div>
-                <p className="text-muted text-xs">Last sync</p>
-                <p className="font-medium text-primary">
-                  {formatDistanceToNow(new Date(lastSyncAt), { addSuffix: true })}
-                </p>
+          </div>
+        </div>
+
+        <button
+          onClick={saveCredentials}
+          disabled={saving || (!clientId.trim() && !clientSecret.trim())}
+          className="inline-flex items-center gap-2 rounded-xl bg-surface border border-border px-4 py-2 text-sm font-medium text-primary hover:bg-surface-2 disabled:opacity-40 transition"
+        >
+          {saving && <Loader2 size={14} className="animate-spin" />}
+          {saved ? "Saved ✓" : "Save credentials"}
+        </button>
+      </div>
+
+      {/* ── Step 3: Connect / Sync ── */}
+      {credentialsSet && (
+        <div className="space-y-4">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+            Step 3 — Connect your Strava account
+          </p>
+
+          {!connected ? (
+            <a
+              href={authUrl ?? "#"}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition",
+                authUrl ? "bg-orange-500 hover:bg-orange-600" : "bg-surface-2 text-muted cursor-not-allowed"
+              )}
+            >
+              <ExternalLink size={15} />
+              Connect with Strava
+            </a>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-6 text-sm">
+                <div>
+                  <p className="text-muted text-xs">Activities synced</p>
+                  <p className="font-semibold font-mono text-primary">{totalSynced.toLocaleString()}</p>
+                </div>
+                {lastSyncAt && (
+                  <div>
+                    <p className="text-muted text-xs">Last sync</p>
+                    <p className="font-medium text-primary">
+                      {formatDistanceToNow(new Date(lastSyncAt), { addSuffix: true })}
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => handleSync(false)}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2 text-sm font-medium text-primary hover:bg-surface transition disabled:opacity-50"
-            >
-              {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-              Sync new activities
-            </button>
-            <button
-              onClick={() => handleSync(true)}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted hover:text-primary hover:bg-surface-2 transition disabled:opacity-50"
-            >
-              Full re-sync (all history)
-            </button>
-          </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => handleSync(false)}
+                  disabled={syncing}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2 text-sm font-medium text-primary hover:bg-surface transition disabled:opacity-50"
+                >
+                  {syncing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+                  Sync new activities
+                </button>
+                <button
+                  onClick={() => handleSync(true)}
+                  disabled={syncing}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted hover:text-primary hover:bg-surface-2 transition disabled:opacity-50"
+                >
+                  Full re-sync (all history)
+                </button>
+              </div>
 
-          {syncResult && (
-            <p className={`text-sm ${syncResult.error ? "text-error" : "text-accent"}`}>
-              {syncResult.error
-                ? `Sync failed: ${syncResult.error}`
-                : `✓ Synced ${syncResult.synced} new activities`}
-            </p>
+              {syncResult && (
+                <p className={`text-sm ${syncResult.error ? "text-error" : "text-accent"}`}>
+                  {syncResult.error
+                    ? `Sync failed: ${syncResult.error}`
+                    : `✓ Synced ${syncResult.synced} new activities`}
+                </p>
+              )}
+            </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
+
+const inputCls =
+  "w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50 transition";
