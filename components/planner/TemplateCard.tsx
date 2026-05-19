@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock, Ruler, Plus, Trash2 } from "lucide-react";
+import { Clock, Ruler, Plus, Trash2, Pencil } from "lucide-react";
 import { ZoneBar } from "./ZoneBar";
 import { formatDuration, formatDistance } from "@/lib/utils";
 import type { WorkoutTemplate } from "@/lib/planner/types";
@@ -10,10 +10,11 @@ interface Props {
   template: WorkoutTemplate;
   onAddToDate?: (templateId: string) => void;
   onDelete?: (templateId: string) => void;
+  onEdit?: (template: WorkoutTemplate) => void;
   compact?: boolean;
 }
 
-export function TemplateCard({ template, onAddToDate, onDelete, compact }: Props) {
+export function TemplateCard({ template, onAddToDate, onDelete, onEdit, compact }: Props) {
   const color = template.color ?? template.sport.color;
 
   return (
@@ -43,6 +44,15 @@ export function TemplateCard({ template, onAddToDate, onDelete, compact }: Props
 
         {/* Actions */}
         <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onEdit && (
+            <button
+              onClick={() => onEdit(template)}
+              className="p-1 rounded-lg hover:bg-surface-2 text-muted hover:text-primary transition-colors"
+              title="Edit template"
+            >
+              <Pencil size={13} />
+            </button>
+          )}
           {onAddToDate && (
             <button
               onClick={() => onAddToDate(template.id)}

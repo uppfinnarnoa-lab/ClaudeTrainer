@@ -33,7 +33,12 @@ function addDays(date: Date, days: number): Date {
 }
 
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // Use local date components to avoid UTC conversion shifting the date
+  // (toISOString() would return UTC, which is 1-2h behind in Sweden)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // Map Swedish workout names → sport type

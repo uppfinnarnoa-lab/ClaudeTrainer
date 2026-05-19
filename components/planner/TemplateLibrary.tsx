@@ -12,9 +12,10 @@ interface Props {
   onAddToDate: (templateId: string) => void;
   onDeleteTemplate: (id: string) => void;
   onNewTemplate: () => void;
+  onEditTemplate: (template: WorkoutTemplate) => void;
 }
 
-export function TemplateLibrary({ templates, sports, onAddToDate, onDeleteTemplate, onNewTemplate }: Props) {
+export function TemplateLibrary({ templates, sports, onAddToDate, onDeleteTemplate, onNewTemplate, onEditTemplate }: Props) {
   const [query, setQuery] = useState("");
   const [activeSport, setActiveSport] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -135,6 +136,7 @@ export function TemplateLibrary({ templates, sports, onAddToDate, onDeleteTempla
                       template={t}
                       onAddToDate={onAddToDate}
                       onDelete={onDeleteTemplate}
+                      onEdit={onEditTemplate}
                       compact
                     />
                   ))}

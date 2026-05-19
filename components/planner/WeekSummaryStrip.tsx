@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { format } from "date-fns";
 import { ZoneBar } from "./ZoneBar";
 import type { PlannedWorkout, TrainingBlock } from "@/lib/planner/types";
 import { formatDuration, formatDistance } from "@/lib/utils";
@@ -12,7 +14,14 @@ interface Props {
   onClick?: () => void;
 }
 
-export function WeekSummaryStrip({ workouts, block, onClick }: Props) {
+export function WeekSummaryStrip({ weekStart, workouts, block, onClick }: Props) {
+  const router = useRouter();
+
+  function handleClick() {
+    if (onClick) { onClick(); return; }
+    const dateStr = format(weekStart, "yyyy-MM-dd");
+    router.push(`/planner/week?date=${dateStr}`);
+  }
   if (workouts.length === 0 && !block) return null;
 
   // Aggregate by sport
@@ -48,7 +57,7 @@ export function WeekSummaryStrip({ workouts, block, onClick }: Props) {
 
   return (
     <button
-      onClick={onClick}
+      onClick={handleClick}
       className={cn(
         "w-full text-left px-2 py-1.5 rounded-lg border border-border/50 bg-surface/80",
         "hover:border-accent/30 hover:bg-surface transition-all text-xs space-y-1",

@@ -29,10 +29,11 @@ export function PlannerClient(props: Props) {
   const [workouts, setWorkouts] = useState(props.workouts);
 
   // Modals
-  const [builderDate, setBuilderDate]   = useState<string | null>(null);
-  const [showBuilder, setShowBuilder]   = useState(false);
-  const [statusWorkout, setStatusWorkout] = useState<PlannedWorkout | null>(null);  // past → status
-  const [editWorkout, setEditWorkout]   = useState<PlannedWorkout | null>(null);    // future → edit
+  const [builderDate, setBuilderDate]       = useState<string | null>(null);
+  const [showBuilder, setShowBuilder]       = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<WorkoutTemplate | null>(null);
+  const [statusWorkout, setStatusWorkout]   = useState<PlannedWorkout | null>(null);
+  const [editWorkout, setEditWorkout]       = useState<PlannedWorkout | null>(null);
 
   const today = new Date().toISOString().split("T")[0];
 
@@ -76,6 +77,25 @@ export function PlannerClient(props: Props) {
     if (!res.ok) return;
     const w: PlannedWorkout = await res.json();
     setWorkouts(prev => [...prev, w].sort((a, b) => a.date.localeCompare(b.date)));
+  }
+
+  // ── Update existing template ───────────────────────────────────────
+  async function handleTemplateUpdate(data: BuilderData) {
+    if (!editingTemplate) return;
+    setEditingTemplate(null);
+    const res = await fetch(`/api/planner/templates/${editingTemplate.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: data.name, sportId: data.sportId, typeId: data.typeId,
+        description: data.description, color: data.color, sections: data.sections,
+      }),
+    });
+    if (res.ok) {
+      const updated: WorkoutTemplate = await res.json();
+      setTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+    }
+    startTransition(() => router.refresh());
   }
 
   // ── Save workout from builder ──────────────────────────────────────
@@ -199,6 +219,7 @@ export function PlannerClient(props: Props) {
           }}
           onDeleteTemplate={handleDeleteTemplate}
           onNewTemplate={() => openBuilder()}
+          onEditTemplate={t => setEditingTemplate(t)}
         />
 
         {/* Calendar */}
@@ -212,7 +233,7 @@ export function PlannerClient(props: Props) {
         </div>
       </div>
 
-      {/* Workout builder modal */}
+      {/* Workout builder — create new */}
       {showBuilder && (
         <WorkoutBuilder
           sports={props.sports}
@@ -221,6 +242,18 @@ export function PlannerClient(props: Props) {
           initialDate={builderDate ?? undefined}
           onSave={handleBuilderSave}
           onCancel={() => setShowBuilder(false)}
+        />
+      )}
+
+      {/* Workout builder — edit existing template */}
+      {editingTemplate && (
+        <WorkoutBuilder
+          sports={props.sports}
+          paceZones={props.paceZoneRanges}
+          hrZones={props.hrZoneRanges}
+          editTemplate={editingTemplate}
+          onSave={handleTemplateUpdate}
+          onCancel={() => setEditingTemplate(null)}
         />
       )}
 

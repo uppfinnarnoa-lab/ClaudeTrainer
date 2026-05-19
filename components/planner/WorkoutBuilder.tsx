@@ -14,13 +14,16 @@ interface NewSection extends Omit<WorkoutSection, "id"> {
   _key: number; // local key for React list
 }
 
+import type { WorkoutTemplate } from "@/lib/planner/types";
+
 interface Props {
   sports: SportCategory[];
-  paceZones?: number[][]; // [[lo,hi] in sec/km per zone]
-  hrZones?: number[][];   // [[lo,hi] in bpm per zone]
+  paceZones?: number[][];
+  hrZones?: number[][];
   onSave: (data: BuilderData) => void;
   onCancel: () => void;
   initialDate?: string;
+  editTemplate?: WorkoutTemplate; // pre-fills form for editing
 }
 
 export interface BuilderData {
@@ -49,14 +52,20 @@ function emptySection(): NewSection {
 
 const ZONE_NAMES = ["", "Z1 Recovery", "Z2 Aerobic", "Z3 Tempo", "Z4 Threshold", "Z5 VO2max"];
 
-export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, initialDate }: Props) {
-  const [name, setName] = useState("");
-  const [sportId, setSportId] = useState(sports[0]?.id ?? "");
-  const [typeId, setTypeId] = useState<string | null>(null);
-  const [description, setDescription] = useState("");
-  const [sections, setSections] = useState<NewSection[]>([emptySection()]);
-  const [saveAsTemplate, setSaveAsTemplate] = useState(true);
-  const [date, setDate] = useState(initialDate ?? "");
+export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, initialDate, editTemplate }: Props) {
+  const isEditing = !!editTemplate;
+
+  const [name, setName]           = useState(editTemplate?.name ?? "");
+  const [sportId, setSportId]     = useState(editTemplate?.sportId ?? sports[0]?.id ?? "");
+  const [typeId, setTypeId]           = useState<string | null>(editTemplate?.typeId ?? null);
+  const [description, setDescription] = useState(editTemplate?.description ?? "");
+  const [sections, setSections]       = useState<NewSection[]>(
+    editTemplate?.sections.length
+      ? editTemplate.sections.map(s => ({ ...s, _key: newKey() }))
+      : [emptySection()]
+  );
+  const [saveAsTemplate, setSaveAsTemplate] = useState(!isEditing);
+  const [date, setDate]               = useState(initialDate ?? "");
 
   const selectedSport = sports.find(s => s.id === sportId);
   const selectedType  = selectedSport?.workoutTypes.find(t => t.id === typeId);
@@ -120,7 +129,7 @@ export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, i
       <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="font-semibold text-primary">Build workout</h2>
+          <h2 className="font-semibold text-primary">{isEditing ? "Edit template" : "Build workout"}</h2>
           <button onClick={onCancel} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition">
             <X size={16} />
           </button>
@@ -230,7 +239,7 @@ export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, i
             disabled={!name.trim()}
             className="px-5 py-2 rounded-xl bg-accent text-sm font-semibold text-white dark:text-background hover:opacity-90 disabled:opacity-40 transition"
           >
-            {date ? "Add to plan" : "Save template"}
+            {isEditing ? "Save changes" : date ? "Add to plan" : "Save template"}
           </button>
         </div>
       </div>
