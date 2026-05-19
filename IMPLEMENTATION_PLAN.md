@@ -1486,15 +1486,39 @@ GOOGLE_AI_API_KEY=""
 - TSS uses TRIMP-exponential (Banister) normalized to threshold effort
 - Type safety: explicit `A` type alias required since Prisma client returns `any` before `db:generate`
 
-### Phase 3 — Training Planner (Week 3–5)
-- [ ] Sport categories + workout types CRUD (Settings → Sports & Types)
-- [ ] Workout builder: sections editor, zone picker, live preview, zone bar
-- [ ] Template library: sidebar, filtering by sport/type, drag-and-drop to calendar
-- [ ] Calendar: month + week view, planned workout pills, drag-and-drop rescheduling
-- [ ] Planned workout CRUD (from template or custom/blank)
-- [ ] Activity → Planned workout matching (auto by date + sport)
-- [ ] Week/month summary panels (volume by sport, estimated TSS)
-- [ ] Intensity & structure analysis panel (zone distribution, polarization, quality sessions)
+### Phase 3 — Training Planner ✅ CORE COMPLETE
+
+- [x] `lib/planner/types.ts` — shared types for all planner components
+- [x] `/api/sports` — GET (all sports + types), POST (create sport or type)
+- [x] `/api/planner/templates` — GET all, POST create (with section computation)
+- [x] `/api/planner/templates/[id]` — DELETE
+- [x] `/api/planner/workouts` — GET (date range), POST create
+- [x] `/api/planner/workouts/[id]` — PATCH (reschedule, outcome), DELETE
+- [x] Workout builder modal (`WorkoutBuilder.tsx`) — name/sport/type/date, ordered sections editor, zone picker with user's actual pace/HR values, live estimated totals + zone bar preview
+- [x] Zone bar (`ZoneBar.tsx`) — proportional colored strip from zone distribution
+- [x] Template library sidebar (`TemplateLibrary.tsx`) — search, sport filter tabs, grouped by sport, collapsible
+- [x] Template card (`TemplateCard.tsx`) — sport badge, estimated duration/distance, zone bar, add/delete actions
+- [x] Workout pill (`WorkoutPill.tsx`) — status icons, missed reason tag, "Log?" prompt for past unlogged
+- [x] Outcome modal (`OutcomeModal.tsx`) — completed/partial/missed flow, missed reason picker (8 categories), free-text note
+- [x] Week summary strip (`WeekSummaryStrip.tsx`) — km/time per sport, zone fingerprint bar, completeness for past weeks, block label
+- [x] Planner calendar (`PlannerCalendar.tsx`) — month view, day cells with block color overlay, today highlight, workout pills (max 3 + overflow), week summary strips
+- [x] Block banner (`BlockBanner.tsx`) — collapsible, chronological past/current/upcoming sections
+- [x] Planner page (`/planner`) — server component fetching all data, passes zone ranges to builder
+- [x] Planner client (`planner-client.tsx`) — state management, template → plan flow, outcome saving
+
+**Deferred to future session:**
+- [ ] Drag-and-drop from library to calendar (using @dnd-kit — currently using prompt-based date input)
+- [ ] Activity → Planned workout auto-matching
+- [ ] Block editor modal (create/edit blocks with date picker)
+- [ ] Intensity analysis detail panel (Week/Block/Plan tabs)
+- [ ] Sport/Type management settings page
+
+**Notes from implementation:**
+- Template library uses click-to-add with `prompt()` for date — DnD deferred as it requires significant extra work
+- Block calendar overlay uses 5% opacity background on day cells from block color
+- Outcome locking (no future status) enforced in PATCH route (`date > today` → 422)
+- Zone ranges passed from server using user's actual VDOT (default VDOT 45 if insufficient data)
+- Serialization helper converts all Prisma Dates to YYYY-MM-DD strings for client components
 
 ### Phase 4 — AI Coach (Week 4–5)
 - [ ] AI client abstraction (Claude + Gemini)

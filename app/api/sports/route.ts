@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/db/prisma";
+import { z } from "zod";
+
+const sportSchema = z.object({
+  name: z.string().min(1).max(60),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  icon: z.string().max(30),
+  order: z.number().int().optional(),
+});
+
+const typeSchema = z.object({
+  name: z.string().min(1).max(60),
+  sportId: z.string().cuid(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().nullable(),
+  order: z.number().int().optional(),
+});
+
+// GET: return all sports + their workout types for the current user
+export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const sports = await prisma.sportCategory.findMany({
+    where: { userId: session.user.id },
+    orderBy: { order: "asc" },
+    include: {
+      workoutTypes: { orderBy: { order: "asc" } },
+    },
+  });
+
+  return NextResponse.json(sports);
+}
+
+// POST: create a sport or workout type
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const body = await req.json().catch(() => null);
+  const kind = body?.kind; // "sport" | "type"
+
+  if (kind === "sport") {
+    const parsed = sportSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "invalid" }, { status: 400 });
+    const sport = await prisma.sportCategory.create({
+      data: { ...parsed.data, userId: session.user.id },
+    });
+    return NextResponse.json(sport, { status: 201 });
+  }
+
+  if (kind === "type") {
+    const parsed = typeSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "invalid" }, { status: 400 });
+    const type = await prisma.workoutType.create({
+      data: { ...parsed.data, userId: session.user.id },
+    });
+    return NextResponse.json(type, { status: 201 });
+  }
+
+  return NextResponse.json({ error: "unknown_kind" }, { status: 400 });
+}
