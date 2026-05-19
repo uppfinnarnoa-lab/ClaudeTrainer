@@ -89,9 +89,10 @@ export function ActivityList({ activities, total, page, perPage, sports, selecte
           </div>
         ) : (
           activities.map((activity) => (
-            <div
+            <a
               key={activity.id}
-              className="rounded-xl bg-surface border border-border p-4 hover:border-accent/40 transition-colors cursor-pointer group"
+              href={`/activities/${activity.id}`}
+              className="block rounded-xl bg-surface border border-border p-4 hover:border-accent/40 transition-colors cursor-pointer group"
               style={{ borderLeftWidth: 3, borderLeftColor: sportColor(activity.sportType) }}
             >
               <div className="flex items-start justify-between gap-4">
@@ -167,7 +168,7 @@ export function ActivityList({ activities, total, page, perPage, sports, selecte
                   </div>
                 </div>
               </div>
-            </div>
+            </a>
           ))
         )}
       </div>

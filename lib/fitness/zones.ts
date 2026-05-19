@@ -20,10 +20,42 @@ export interface PaceZones {
   vdot: number;
 }
 
-// Estimate max HR from activity data (highest HR ever seen, with margin)
+/**
+ * Estimate max HR from a list of per-activity max HR values.
+ *
+ * Strategy: take the 98th percentile rather than the absolute max to avoid
+ * single-sensor spikes, then add a small margin because max is rarely reached
+ * in training (only in true all-out efforts / races).
+ *
+ * The absolute max is used only as a floor (we won't estimate BELOW what was
+ * actually observed).
+ */
 export function estimateMaxHR(activityMaxHRs: number[]): number {
   if (activityMaxHRs.length === 0) return 190;
-  return Math.max(...activityMaxHRs);
+  // Filter out obvious sensor spikes (> 220 or < 100)
+  const clean = activityMaxHRs.filter(h => h >= 100 && h <= 220);
+  if (clean.length === 0) return 190;
+  // 98th percentile to avoid outlier spikes
+  const sorted = [...clean].sort((a, b) => a - b);
+  const p98idx = Math.floor(sorted.length * 0.98);
+  const p98 = sorted[Math.min(p98idx, sorted.length - 1)];
+  // Add 3 bpm margin: max HR is rarely reached in monitored training
+  return Math.round(p98 + 3);
+}
+
+/**
+ * Estimate max HR from threshold-effort activities.
+ * More robust than raw max because threshold efforts have consistent, reliable HR.
+ * thresholdHRs: array of average HRs from known hard/threshold sessions.
+ */
+export function estimateMaxHRFromThreshold(thresholdHRs: number[]): number | null {
+  if (thresholdHRs.length < 3) return null; // not enough data
+  const sorted = [...thresholdHRs].sort((a, b) => a - b);
+  // 90th percentile of threshold HRs ≈ lactate threshold HR
+  const p90idx = Math.floor(sorted.length * 0.90);
+  const thresholdHR = sorted[Math.min(p90idx, sorted.length - 1)];
+  // Threshold HR is typically 85–91% of max HR; use 88% midpoint
+  return Math.round(thresholdHR / 0.88);
 }
 
 // Build HR zones from max HR. Using 5-zone model based on % of max HR.

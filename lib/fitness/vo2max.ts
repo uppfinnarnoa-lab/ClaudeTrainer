@@ -60,12 +60,20 @@ export function vo2maxFromSubmaxEffort(
 
 // ─── Combined estimate ────────────────────────────────────────────────────
 
+// Race-like keyword detection — catches fast efforts not marked workout_type=1
+function looksLikeRace(name: string): boolean {
+  return /tävl|race|lopp|mila|stafett|sic\b|sprint.*ol|parkrun|time.?trial|tt\b|timed|5k|10k|half.?marathon|halvmara/i
+    .test(name);
+}
+
 interface ActivitySample {
   distanceM: number;
   timeSec: number;
   avgHR: number | null;
   isRace: boolean;
   sportType: string;
+  name?: string;
+  bestEfforts?: unknown; // JSON from Strava
 }
 
 export function estimateVO2max(
@@ -76,14 +84,42 @@ export function estimateVO2max(
   const estimates: number[] = [];
   let bestMethod = "HR ratio";
 
-  // Method 1: best race performance in last 2 years
-  const races = activities
-    .filter(a => a.isRace && a.sportType.toLowerCase().includes("run") && a.distanceM >= 1500)
-    .slice(0, 5);
-  if (races.length > 0) {
-    const raceVdots = races.map(r => vdotFromRace(r.distanceM, r.timeSec));
-    estimates.push(Math.max(...raceVdots));
-    bestMethod = "race performance (VDOT)";
+  // Method 1: Best VDOT from race-like efforts
+  // Includes: isRace=true AND name-keyword races AND best efforts from Strava
+  const isRunning = (a: ActivitySample) =>
+    a.sportType.toLowerCase().includes("run") || a.sportType.toLowerCase().includes("trail");
+
+  // 1a. Marked races + keyword races
+  const raceEfforts = activities.filter(a =>
+    isRunning(a) &&
+    a.distanceM >= 1500 &&
+    (a.isRace || looksLikeRace(a.name ?? ""))
+  );
+
+  // 1b. Extract per-distance best efforts from Strava's bestEfforts JSON
+  const bestEffortVdots: number[] = [];
+  for (const a of activities) {
+    if (!a.bestEfforts || !isRunning(a)) continue;
+    try {
+      const efforts = a.bestEfforts as Array<{ distance: number; elapsed_time: number }>;
+      for (const e of efforts) {
+        if (e.distance >= 1500 && e.elapsed_time > 0) {
+          const v = vdotFromRace(e.distance, e.elapsed_time);
+          if (v > 35 && v < 90) bestEffortVdots.push(v);
+        }
+      }
+    } catch { /* malformed JSON */ }
+  }
+
+  const raceVdots = raceEfforts.map(r => vdotFromRace(r.distanceM, r.timeSec))
+    .filter(v => v > 35 && v < 90);
+  const allVdots = [...raceVdots, ...bestEffortVdots];
+
+  if (allVdots.length > 0) {
+    estimates.push(Math.max(...allVdots));
+    bestMethod = bestEffortVdots.length > raceVdots.length
+      ? "best effort data (VDOT)"
+      : "race performance (VDOT)";
   }
 
   // Method 2: HR ratio
@@ -124,7 +160,7 @@ export function estimateVO2max(
   return {
     value: Math.round(clamped * 10) / 10,
     vdot: Math.round(clamped * 10) / 10,
-    confidence: races.length > 0 ? "high" : estimates.length >= 2 ? "medium" : "low",
+    confidence: allVdots.length > 0 ? "high" : estimates.length >= 2 ? "medium" : "low",
     method: bestMethod,
   };
 }

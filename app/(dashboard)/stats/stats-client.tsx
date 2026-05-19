@@ -47,6 +47,16 @@ export function StatsClient(props: Props) {
     zoneSeconds, vo2max, paceZones, predictions } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
+  const [sportFilter, setSportFilter] = useState<string | null>(null);
+
+  // Filter weeklyVolumes by selected sport
+  const allSports = [...new Set(Object.values(props.weeklyVolumes).flatMap(w => Object.keys(w)))].sort();
+  const filteredVolumes = sportFilter
+    ? Object.fromEntries(Object.entries(props.weeklyVolumes).map(([wk, sports]) => [
+        wk,
+        Object.fromEntries(Object.entries(sports).filter(([s]) => s === sportFilter)),
+      ]))
+    : props.weeklyVolumes;
   const form = tsbLabel(todayLoad.tsb);
 
   return (
@@ -107,9 +117,12 @@ export function StatsClient(props: Props) {
 
           {/* Quick chart preview */}
           <SectionCard title="Weekly volume" action={
-            <VolumeToggle mode={volumeMode} setMode={setVolumeMode} />
+            <div className="flex gap-1 items-center">
+              <SportFilter sports={allSports} selected={sportFilter} onChange={setSportFilter} />
+              <VolumeToggle mode={volumeMode} setMode={setVolumeMode} />
+            </div>
           }>
-            <WeeklyVolumeChart weeklyVolumes={weeklyVolumes} mode={volumeMode} />
+            <WeeklyVolumeChart weeklyVolumes={filteredVolumes} mode={volumeMode} />
           </SectionCard>
 
           <SectionCard title="Training load (ATL / CTL / TSB)" tips={[tooltips.atl, tooltips.ctl, tooltips.tsb]}>
@@ -121,8 +134,13 @@ export function StatsClient(props: Props) {
       {/* ── Volume ── */}
       {section === "Volume" && (
         <div className="space-y-6">
-          <SectionCard title="Weekly volume" action={<VolumeToggle mode={volumeMode} setMode={setVolumeMode} />}>
-            <WeeklyVolumeChart weeklyVolumes={weeklyVolumes} mode={volumeMode} />
+          <SectionCard title="Weekly volume" action={
+            <div className="flex gap-1 items-center">
+              <SportFilter sports={allSports} selected={sportFilter} onChange={setSportFilter} />
+              <VolumeToggle mode={volumeMode} setMode={setVolumeMode} />
+            </div>
+          }>
+            <WeeklyVolumeChart weeklyVolumes={filteredVolumes} mode={volumeMode} />
           </SectionCard>
           <div className="grid grid-cols-3 gap-4">
             <OverviewCard label="This week" value={`${o.thisWeek.km} km`} sub={formatDuration(o.thisWeek.timeSec)} delta={pct(o.thisWeek.km, o.lyWeek.km)} />
@@ -190,6 +208,26 @@ function VolumeToggle({ mode, setMode }: { mode: string; setMode: (m: "distance"
             mode === m ? "bg-accent/10 text-accent" : "text-muted hover:text-primary"
           )}>
           {m === "distance" ? "km" : "time"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SportFilter({ sports, selected, onChange }: {
+  sports: string[]; selected: string | null; onChange: (s: string | null) => void;
+}) {
+  if (sports.length <= 1) return null;
+  return (
+    <div className="flex gap-1 rounded-lg border border-border p-0.5 text-xs">
+      <button onClick={() => onChange(null)}
+        className={cn("px-2 py-1 rounded-md transition-colors", !selected ? "bg-accent/10 text-accent" : "text-muted hover:text-primary")}>
+        All
+      </button>
+      {sports.slice(0, 4).map(s => (
+        <button key={s} onClick={() => onChange(selected === s ? null : s)}
+          className={cn("px-2 py-1 rounded-md transition-colors", selected === s ? "bg-accent/10 text-accent" : "text-muted hover:text-primary")}>
+          {s.replace(/([A-Z])/g, " $1").trim().split(" ")[0]}
         </button>
       ))}
     </div>
