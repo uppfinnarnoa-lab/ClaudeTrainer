@@ -31,7 +31,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-16 items-center px-5 border-b border-border">
         <span className="text-lg font-semibold tracking-tight text-primary">
-          Claude<span className="text-accent">Trainer</span>
+          Training<span className="text-accent">Lab</span>
         </span>
       </div>
 

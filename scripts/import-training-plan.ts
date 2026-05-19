@@ -65,7 +65,7 @@ function resolveYear(weekNum: number, seenHighWeek: boolean): number {
 // ── Main ─────────────────────────────────────────────────────────────────
 
 async function main() {
-  const email = process.env.SEED_EMAIL ?? "admin@claudetrainer.local";
+  const email = process.env.SEED_EMAIL ?? "admin@traininglab.local";
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     console.error(`User ${email} not found. Run seed-user.ts first.`);

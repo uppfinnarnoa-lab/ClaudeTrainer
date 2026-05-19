@@ -72,7 +72,7 @@ export const STRAVA_GUIDE: Step[] = [
     link: { label: "strava.com/settings/api", url: "https://www.strava.com/settings/api" },
   },
   {
-    text: 'Give it any name (e.g. "ClaudeTrainer"). Set the "Authorization Callback Domain" to your domain (or localhost for local dev).',
+    text: 'Give it any name (e.g. "TrainingLab"). Set the "Authorization Callback Domain" to your domain (or localhost for local dev).',
   },
   {
     text: 'After creating the app, copy the "Client ID" and "Client Secret" into your .env.local file.',
@@ -114,7 +114,7 @@ export const CLAUDE_GUIDE: Step[] = [
     link: { label: "console.anthropic.com", url: "https://console.anthropic.com" },
   },
   {
-    text: 'In the console, click "API Keys" → "Create Key". Give it a name like "ClaudeTrainer".',
+    text: 'In the console, click "API Keys" → "Create Key". Give it a name like "TrainingLab".',
   },
   {
     text: "Copy the key (starts with sk-ant-) and paste it into the field above. The key is stored encrypted in your database.",

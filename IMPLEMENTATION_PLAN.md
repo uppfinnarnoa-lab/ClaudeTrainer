@@ -1,4 +1,4 @@
-# ClaudeTrainer — Implementation Plan
+# TrainingLab — Implementation Plan
 
 > Personal AI-powered training platform integrating Strava, coaching intelligence, and training planning.
 
@@ -1249,7 +1249,7 @@ Confidence = based on how many methods available + data recency
 ## 8. Project Structure
 
 ```
-claudetrainer/
+traininglab/
 ├── app/                          # Next.js App Router
 │   ├── (auth)/
 │   │   ├── login/page.tsx
@@ -1369,9 +1369,9 @@ npm install -g pnpm pm2
 
 # Database setup
 sudo -u postgres psql
-CREATE DATABASE claudetrainer;
-CREATE USER claudetrainer WITH PASSWORD 'yourpassword';
-GRANT ALL PRIVILEGES ON DATABASE claudetrainer TO claudetrainer;
+CREATE DATABASE traininglab;
+CREATE USER traininglab WITH PASSWORD 'yourpassword';
+GRANT ALL PRIVILEGES ON DATABASE traininglab TO traininglab;
 ```
 
 ### PM2 Configuration
@@ -1379,10 +1379,10 @@ GRANT ALL PRIVILEGES ON DATABASE claudetrainer TO claudetrainer;
 // ecosystem.config.js
 {
   "apps": [{
-    "name": "claudetrainer",
+    "name": "traininglab",
     "script": "node_modules/.bin/next",
     "args": "start",
-    "cwd": "/var/www/claudetrainer",
+    "cwd": "/var/www/traininglab",
     "env": { "PORT": "3000", "NODE_ENV": "production" }
   }]
 }
@@ -1410,7 +1410,7 @@ GRANT ALL PRIVILEGES ON DATABASE claudetrainer TO claudetrainer;
 ### Environment Variables (.env.local)
 ```env
 # Database
-DATABASE_URL="postgresql://claudetrainer:password@localhost:5432/claudetrainer"
+DATABASE_URL="postgresql://traininglab:password@localhost:5432/traininglab"
 
 # NextAuth
 NEXTAUTH_SECRET="generate-with-openssl-rand-base64-32"

@@ -1,4 +1,4 @@
-# ClaudeTrainer — Local Testing Guide
+# TrainingLab — Local Testing Guide
 
 Step-by-step instructions to get the app running locally and test all features.
 
@@ -26,7 +26,7 @@ docker-compose up -d
 Starts PostgreSQL on `localhost:5432`. Verify it's running:
 ```bash
 docker ps
-# Should show: claudetrainer-db   Up
+# Should show: traininglab-db   Up
 ```
 
 ---
@@ -60,7 +60,7 @@ pnpm db:generate    # generates Prisma client types
 ## Step 4 — Create your account
 
 ```bash
-# Default: admin@claudetrainer.local / changeme123
+# Default: admin@traininglab.local / changeme123
 npx tsx scripts/seed-user.ts
 
 # Or with custom credentials:
@@ -87,7 +87,7 @@ Log in with the credentials from Step 4.
 
 1. Go to https://www.strava.com/settings/api
 2. Create an application:
-   - **Application Name:** ClaudeTrainer (any name)
+   - **Application Name:** TrainingLab (any name)
    - **Website:** `http://localhost`
    - **Authorization Callback Domain:** `localhost`
 3. Copy **Client ID** and **Client Secret**
@@ -251,13 +251,13 @@ sudo apt install -y nodejs postgresql
 npm install -g pnpm pm2
 
 # Set up PostgreSQL (replace passwords)
-sudo -u postgres psql -c "CREATE DATABASE claudetrainer;"
-sudo -u postgres psql -c "CREATE USER claudetrainer WITH PASSWORD 'yourpassword';"
-sudo -u postgres psql -c "GRANT ALL ON DATABASE claudetrainer TO claudetrainer;"
+sudo -u postgres psql -c "CREATE DATABASE traininglab;"
+sudo -u postgres psql -c "CREATE USER traininglab WITH PASSWORD 'yourpassword';"
+sudo -u postgres psql -c "GRANT ALL ON DATABASE traininglab TO traininglab;"
 
 # Clone and set up
-git clone git@github.com:uppfinnarnoa-lab/ClaudeTrainer.git /var/www/claudetrainer
-cd /var/www/claudetrainer
+git clone git@github.com:uppfinnarnoa-lab/TrainingLab.git /var/www/traininglab
+cd /var/www/traininglab
 cp .env.local.example .env.local   # fill in production values
 pnpm install
 pnpm db:migrate

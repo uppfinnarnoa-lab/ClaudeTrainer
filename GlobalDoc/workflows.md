@@ -63,12 +63,12 @@ ANTHROPIC_API_KEY        # optional default; users can set own key in UI
 pnpm build
 
 # Start/restart with PM2
-pm2 restart claudetrainer
+pm2 restart traininglab
 # or first time:
 pm2 start ecosystem.config.js
 
 # View logs
-pm2 logs claudetrainer
+pm2 logs traininglab
 
 # DB migrations in production
 pnpm prisma migrate deploy

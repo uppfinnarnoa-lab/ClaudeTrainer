@@ -38,7 +38,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-semibold tracking-tight text-primary">
-            Claude<span className="text-accent">Trainer</span>
+            Training<span className="text-accent">Lab</span>
           </h1>
           <p className="mt-2 text-sm text-muted">Your personal AI training coach</p>
         </div>

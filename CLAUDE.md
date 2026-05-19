@@ -1,4 +1,4 @@
-# ClaudeTrainer
+# TrainingLab
 
 Personal AI-powered training platform. Connects Strava activity data + Garmin physiological data with an AI coach. Single user, self-hosted on Ubuntu/Apache. See `IMPLEMENTATION_PLAN.md` for full feature spec.
 

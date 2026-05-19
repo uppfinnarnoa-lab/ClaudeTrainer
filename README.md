@@ -1,4 +1,4 @@
-# ClaudeTrainer
+# TrainingLab
 
 Personal AI-powered training platform — Strava + Garmin + AI coach.
 
@@ -42,7 +42,7 @@ pnpm db:generate      # generate Prisma client types
 npx tsx scripts/seed-user.ts
 ```
 
-Default credentials: `admin@claudetrainer.local` / `changeme123`
+Default credentials: `admin@traininglab.local` / `changeme123`
 
 Override with env vars:
 ```bash
