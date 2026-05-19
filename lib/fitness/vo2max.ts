@@ -1,16 +1,29 @@
-// VO2max estimation via three methods, weighted by confidence.
+/**
+ * Multi-model VO2max estimation.
+ *
+ * Models used (weighted mean):
+ *   1. Daniels VDOT          — from best quality-session pace segments (weight 0.50)
+ *   2. Uth-Sørensen (2003)   — 15 × (HRmax/HRrest)                    (weight 0.15)
+ *   3. Cooper (1968)         — 15.3 × (HRmax/HRrest)                   (weight 0.10)
+ *   4. HR-pace regression    — Firstbeat-style slope extrapolation      (weight 0.20)
+ *   5. Fitness decay bridge  — last known VDOT × decay factor           (weight 0.05)
+ *
+ * Key rule: easy runs NEVER lower the estimate.
+ *   Only quality sessions (pace > easy threshold, or isRace) are used for VDOT.
+ *   Easy runs only contribute to HR-based methods.
+ *   Fitness decay is applied when no quality data exists recently.
+ */
 
 export interface VO2maxEstimate {
-  value: number;       // ml/kg/min
-  vdot: number;        // Daniels VDOT (≈VO2max for running)
+  value: number;
+  vdot: number;
   confidence: "high" | "medium" | "low";
   method: string;
+  breakdown?: Record<string, number>; // model → estimate
 }
 
-// ─── Method 1: Race-based VDOT (most accurate) ────────────────────────────
+// ── Daniels VDOT formula ─────────────────────────────────────────────────
 
-// Daniels VDOT from a race performance.
-// distance in meters, time in seconds.
 export function vdotFromRace(distanceM: number, timeSec: number): number {
   const v = distanceM / timeSec * 60; // m/min
   const pctVO2max = percentVO2maxFromDuration(timeSec / 60);
@@ -18,8 +31,6 @@ export function vdotFromRace(distanceM: number, timeSec: number): number {
   return vo2atPace / pctVO2max;
 }
 
-// Approximate %VO2max sustainable for a given race duration (minutes).
-// Based on Daniels' tables.
 function percentVO2maxFromDuration(minutes: number): number {
   if (minutes <= 3.5)  return 1.00;
   if (minutes <= 5)    return 0.975;
@@ -35,37 +46,91 @@ function percentVO2maxFromDuration(minutes: number): number {
   return 0.865;
 }
 
-// ─── Method 2: HR-ratio (Astrand-Ryhming) ────────────────────────────────
+// ── Predict race time from VDOT ───────────────────────────────────────────
 
-export function vo2maxFromHRRatio(maxHR: number, restHR: number): number {
-  // Simple formula: VO2max ≈ 15 × (HRmax / HRrest)
+export function predictRaceTime(vdot: number, distanceM: number): number {
+  let lo = distanceM / 15, hi = distanceM * 3;
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (vdotFromRace(distanceM, mid) > vdot) lo = mid; else hi = mid;
+  }
+  return Math.round((lo + hi) / 2);
+}
+
+export function tsbAdjustedRaceTime(baseTimeSec: number, tsb: number): number {
+  const adj = Math.max(Math.min(-tsb * 0.0005, 0.08), -0.04);
+  return Math.round(baseTimeSec * (1 + adj));
+}
+
+// ── HR-based models ───────────────────────────────────────────────────────
+
+/** Uth-Sørensen-Overgaard-Pedersen (2003): VO2max = 15 × HRmax/HRrest */
+export function vo2maxUth(maxHR: number, restHR: number): number {
   return 15 * (maxHR / restHR);
 }
 
-// ─── Method 3: Submaximal run (Uth et al.) ───────────────────────────────
-// Uses pace + HR from aerobic runs. Estimates VO2 at observed pace/HR, extrapolates.
+/** Cooper (1968): VO2max = 15.3 × HRmax/HRrest */
+export function vo2maxCooper(maxHR: number, restHR: number): number {
+  return 15.3 * (maxHR / restHR);
+}
 
+/**
+ * HR-pace regression (Firstbeat-style).
+ * Fits a line through (avgHR, vo2atPace) points from submaximal runs.
+ * Extrapolates to maxHR to estimate VO2max.
+ * Only uses runs in the aerobic zone (60-90% maxHR) where HR/pace is linear.
+ */
+export function vo2maxHRPaceRegression(
+  runs: Array<{ avgHR: number; avgPaceSecPerKm: number }>,
+  maxHR: number,
+): number | null {
+  const valid = runs.filter(r =>
+    r.avgHR > maxHR * 0.60 && r.avgHR < maxHR * 0.92 &&
+    r.avgPaceSecPerKm > 180 && r.avgPaceSecPerKm < 600
+  );
+  if (valid.length < 4) return null;
+
+  // Compute VO2 at each observed pace using Daniels approximation
+  const points = valid.map(r => {
+    const vMin = 1000 / r.avgPaceSecPerKm * 60;
+    const vo2 = -4.60 + 0.182258 * vMin + 0.000104 * vMin * vMin;
+    return { hr: r.avgHR, vo2 };
+  });
+
+  // Linear regression: vo2 = a × hr + b
+  const n = points.length;
+  const sumHR  = points.reduce((s, p) => s + p.hr, 0);
+  const sumVO2 = points.reduce((s, p) => s + p.vo2, 0);
+  const sumHR2 = points.reduce((s, p) => s + p.hr * p.hr, 0);
+  const sumHRVO2 = points.reduce((s, p) => s + p.hr * p.vo2, 0);
+  const denom = n * sumHR2 - sumHR * sumHR;
+  if (Math.abs(denom) < 1e-6) return null;
+
+  const a = (n * sumHRVO2 - sumHR * sumVO2) / denom;
+  const b = (sumVO2 - a * sumHR) / n;
+
+  const vo2atMax = a * maxHR + b;
+  return vo2atMax > 30 && vo2atMax < 90 ? vo2atMax : null;
+}
+
+/** Submaximal effort extrapolation (Åstrand-Ryhming adapted for running) */
 export function vo2maxFromSubmaxEffort(
-  avgPaceSecPerKm: number, // pace at the effort
+  avgPaceSecPerKm: number,
   avgHR: number,
   maxHR: number,
 ): number {
-  // VO2 at that pace (ml/kg/min using Daniels approximation)
-  const v = 1000 / avgPaceSecPerKm * 60; // m/min
+  const v = 1000 / avgPaceSecPerKm * 60;
   const vo2AtPace = -4.60 + 0.182258 * v + 0.000104 * v * v;
-  // Scale to 100% HR max
-  const hrFraction = avgHR / maxHR;
-  return vo2AtPace / hrFraction;
+  return vo2AtPace / (avgHR / maxHR);
 }
 
-// ─── Combined estimate ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 function looksLikeRace(name: string): boolean {
-  return /tävl|race|lopp|mila|stafett|sic\b|parkrun|time.?trial|tt\b|5k|10k|halvmara|half.?marathon/i
+  return /tävl|race|lopp|mila|stafett|sic\b|parkrun|time.?trial|tt\b|halvmara|half.?marathon/i
     .test(name);
 }
 
-// Is this activity approximately a given distance? (±8%)
 function nearDistance(distM: number, targetM: number) {
   return Math.abs(distM - targetM) / targetM < 0.08;
 }
@@ -73,35 +138,16 @@ function nearDistance(distM: number, targetM: number) {
 function percentile(arr: number[], p: number): number {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
-  const idx = Math.floor(sorted.length * p);
-  return sorted[Math.min(idx, sorted.length - 1)];
+  return sorted[Math.min(Math.floor(sorted.length * p), sorted.length - 1)];
 }
 
 interface SplitKm {
-  distance: number;    // meters (usually ~1000)
-  moving_time: number; // seconds
-  average_speed: number; // m/s
+  distance: number;
+  moving_time: number;
+  average_speed: number;
 }
 
-interface ActivitySample {
-  distanceM: number;
-  timeSec: number;
-  avgHR: number | null;
-  maxHR?: number | null;
-  isRace: boolean;
-  sportType: string;
-  name?: string;
-  bestEfforts?: unknown;
-  splitsMetric?: unknown;
-  startDate?: Date;  // for recency weighting
-}
-
-/**
- * Find the best average speed over N consecutive km splits.
- * Used to extract the fastest 5K segment within any activity.
- */
 function bestNkmSpeed(splits: SplitKm[], n: number): number | null {
-  // Filter out very slow splits (< 2 m/s) that are warmup/cooldown
   const valid = splits.filter(s => s.average_speed > 2 && s.distance > 500);
   if (valid.length < n) return null;
   let best = 0;
@@ -114,11 +160,56 @@ function bestNkmSpeed(splits: SplitKm[], n: number): number | null {
   return best > 0 ? best : null;
 }
 
-/** Recency weight: exponential decay with 90-day half-life. Recent = high weight. */
+/** Exponential recency weight: 1.0 at 0 days, 0.5 at 90 days, 0.25 at 180 days */
 function recencyWeight(startDate: Date | undefined): number {
   if (!startDate) return 0.5;
   const daysAgo = (Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-  return Math.exp(-daysAgo / 90); // weight = 1.0 at 0 days, 0.37 at 90 days
+  return Math.exp(-daysAgo / 130); // ~130 day half-life → old PRs stay relevant for a year
+}
+
+/**
+ * Is this run a QUALITY session?
+ * Quality = race, keyword race, OR pace is significantly above easy threshold.
+ * Easy runs are excluded from VDOT estimation to prevent dragging it down.
+ */
+function isQualitySession(a: ActivitySample, easyPaceThreshold: number): boolean {
+  if (a.isRace || looksLikeRace(a.name ?? "")) return true;
+  const avgPaceSecPerKm = a.distanceM > 0 && a.timeSec > 0
+    ? a.timeSec / (a.distanceM / 1000) : null;
+  // Quality if faster than easy pace - 60 sec/km (allows a wide margin)
+  return avgPaceSecPerKm != null && avgPaceSecPerKm < (easyPaceThreshold - 60);
+}
+
+/** Fitness decay model (Mujika & Padilla, 2000; Coyle, 1984).
+ *  With regular easy running: ~5% loss per 12 weeks.
+ *  With complete cessation: ~20% loss per 12 weeks.
+ */
+function applyFitnessDecay(
+  vdot: number,
+  daysSinceLastQuality: number,
+  hasRecentEasyRuns: boolean,
+): number {
+  if (daysSinceLastQuality < 14) return vdot; // recent quality = no decay
+  const weeks = (daysSinceLastQuality - 14) / 7;
+  // Weekly decay rate: 0.4% with easy maintenance, 1.5% without
+  const weeklyDecay = hasRecentEasyRuns ? 0.004 : 0.015;
+  const decayed = vdot * Math.pow(1 - weeklyDecay, weeks);
+  return Math.max(decayed, vdot * 0.70); // floor at 70% of best (realistic minimum)
+}
+
+// ── Main estimation function ──────────────────────────────────────────────
+
+interface ActivitySample {
+  distanceM: number;
+  timeSec: number;
+  avgHR: number | null;
+  maxHR?: number | null;
+  isRace: boolean;
+  sportType: string;
+  name?: string;
+  bestEfforts?: unknown;
+  splitsMetric?: unknown;
+  startDate?: Date;
 }
 
 export function estimateVO2max(
@@ -126,155 +217,126 @@ export function estimateVO2max(
   maxHR: number,
   restHR: number,
 ): VO2maxEstimate {
-  const estimates: number[] = [];
-  let bestMethod = "HR ratio";
-
-  const isRunning = (a: ActivitySample) =>
-    /run|trail/i.test(a.sportType);
-
+  const isRunning = (a: ActivitySample) => /run|trail/i.test(a.sportType);
   const runs = activities.filter(isRunning);
 
-  // ── Collect recency-weighted VDOT candidates from ALL sources ───────────
+  // Estimate "easy pace" as 75th percentile pace of ALL runs (easy runs cluster here)
+  const allPaces = runs
+    .filter(a => a.distanceM >= 3000 && a.timeSec > 0)
+    .map(a => a.timeSec / (a.distanceM / 1000));
+  const easyPaceThreshold = allPaces.length > 5 ? percentile(allPaces, 0.75) : 360;
 
+  // ── MODEL 1: Pace-based VDOT from quality sessions only ──────────────────
   interface VdotCandidate { v: number; weight: number; source: string }
   const candidates: VdotCandidate[] = [];
 
-  // ── Source A: best N-km segment from splits (catches intervals, first 5K of 10K etc.) ──
   for (const a of runs) {
-    if (!a.splitsMetric || !Array.isArray(a.splitsMetric)) continue;
-    const splits = (a.splitsMetric as SplitKm[]).filter(s => s.moving_time > 0);
     const w = recencyWeight(a.startDate);
 
-    // Try 5-km rolling best (catches first 5K of 10K, 5km time trials)
-    const speed5k = bestNkmSpeed(splits, 5);
-    if (speed5k) {
-      const time5k = 5000 / speed5k;
-      const v = vdotFromRace(5000, time5k);
-      if (v > 35 && v < 90) candidates.push({ v, weight: w * 1.0, source: "best 5-km segment" });
+    // From splits: rolling segment bests
+    if (a.splitsMetric && Array.isArray(a.splitsMetric)) {
+      const splits = (a.splitsMetric as SplitKm[]).filter(s => s.moving_time > 0);
+      for (const [n, label, factor] of [[5, "5km-seg", 1.0], [3, "3km-seg", 1.02], [10, "10km-seg", 1.0]] as const) {
+        const speed = bestNkmSpeed(splits, n);
+        if (!speed) continue;
+        const timeSec = (n * 1000) / speed * (factor as number);
+        const v = vdotFromRace(n * 1000, timeSec);
+        if (v > 35 && v < 90) candidates.push({ v, weight: w, source: label });
+      }
     }
 
-    // Try 3-km rolling best (short intervals, Tisdagsbana reps)
-    const speed3k = bestNkmSpeed(splits, 3);
-    if (speed3k) {
-      const time3k = 3000 / speed3k;
-      const v = vdotFromRace(3000, time3k * 1.02); // 2% conservative adj for 3km
-      if (v > 35 && v < 90) candidates.push({ v, weight: w * 0.9, source: "best 3-km segment" });
-    }
-
-    // Try 10-km rolling best (tempo runs, longer races)
-    const speed10k = bestNkmSpeed(splits, 10);
-    if (speed10k) {
-      const time10k = 10000 / speed10k;
-      const v = vdotFromRace(10000, time10k);
-      if (v > 35 && v < 90) candidates.push({ v, weight: w * 1.0, source: "best 10-km segment" });
-    }
-  }
-
-  // ── Source B: full activity as race (isRace or keyword) ──────────────────
-  const raceRuns = runs.filter(a => a.distanceM >= 1500 && (a.isRace || looksLikeRace(a.name ?? "")));
-  for (const a of raceRuns) {
-    const v = vdotFromRace(a.distanceM, a.timeSec);
-    if (v > 35 && v < 90) {
-      candidates.push({ v, weight: recencyWeight(a.startDate) * 1.1, source: "race" });
-    }
-  }
-
-  // ── Source C: Strava bestEfforts JSON ────────────────────────────────────
-  for (const a of runs) {
-    if (!a.bestEfforts) continue;
-    try {
-      const efforts = a.bestEfforts as Array<{ distance: number; elapsed_time: number }>;
-      for (const e of efforts) {
+    // From bestEfforts JSON
+    if (a.bestEfforts && Array.isArray(a.bestEfforts)) {
+      for (const e of a.bestEfforts as Array<{ distance: number; elapsed_time: number }>) {
         if (e.distance >= 1500 && e.elapsed_time > 0) {
           const v = vdotFromRace(e.distance, e.elapsed_time);
-          if (v > 35 && v < 90) {
-            candidates.push({ v, weight: recencyWeight(a.startDate) * 1.05, source: "Strava best effort" });
-          }
+          if (v > 35 && v < 90) candidates.push({ v, weight: w * 1.05, source: "bestEffort" });
         }
       }
-    } catch { /* malformed */ }
-  }
+    }
 
-  // ── Source D: distance-bucket approach (catches whole-activity fast runs) ──
-  const BUCKETS = [
-    { name: "5K",  m: 5000,  tol: 0.10 },
-    { name: "10K", m: 10000, tol: 0.08 },
-    { name: "15K", m: 15000, tol: 0.10 },
-    { name: "HM",  m: 21097, tol: 0.08 },
-  ];
-  for (const b of BUCKETS) {
-    const matching = runs
-      .filter(a => nearDistance(a.distanceM, b.m) && a.timeSec > 0)
-      .sort((a, s) => (a.timeSec / a.distanceM) - (s.timeSec / s.distanceM));
-    if (matching.length === 0) continue;
-    // Use fastest, with conservative factor for non-race
-    const a = matching[0];
+    // From whole-activity pace (only if quality session or race)
+    if (!isQualitySession(a, easyPaceThreshold)) continue;
+    if (a.distanceM < 1500 || a.timeSec <= 0) continue;
+
     const isRaceSession = a.isRace || looksLikeRace(a.name ?? "");
-    const factor = isRaceSession ? 1 : (b.m < 8000 ? 0.95 : 0.98);
-    const v = vdotFromRace(b.m, a.timeSec / factor);
-    if (v > 35 && v < 90) {
-      candidates.push({ v, weight: recencyWeight(a.startDate) * (isRaceSession ? 1.1 : 0.9), source: `${b.name} activity` });
+    const BUCKETS = [{ m: 5000, tol: 0.10 }, { m: 3000, tol: 0.12 }, { m: 10000, tol: 0.08 }, { m: 15000, tol: 0.10 }, { m: 21097, tol: 0.08 }];
+    for (const b of BUCKETS) {
+      if (!nearDistance(a.distanceM, b.m)) continue;
+      const factor = isRaceSession ? 1 : (b.m < 8000 ? 0.95 : 0.98);
+      const v = vdotFromRace(b.m, a.timeSec / factor);
+      if (v > 35 && v < 90) candidates.push({ v, weight: w * (isRaceSession ? 1.1 : 0.85), source: isRaceSession ? "race" : "quality-run" });
     }
   }
 
-  // ── Pick VDOT: recency-weighted maximum ───────────────────────────────────
-  // Sort by weight×v descending, take the best
+  // Best recency-boosted VDOT (score = v + ln(weight)×3 — recent fast > old fast)
+  let model1Vdot: number | null = null;
   if (candidates.length > 0) {
-    // Sort: recency-boosted v = v + log(weight) * 3  (recent fast > old fast > recent slow)
-    const scored = candidates.map(c => ({ ...c, score: c.v + Math.log(c.weight + 0.01) * 3 }));
-    scored.sort((a, b) => b.score - a.score);
-    const best = scored[0];
-    estimates.push(best.v);
-    bestMethod = `${best.source} (recency-weighted)`;
+    const best = candidates.reduce((a, b) =>
+      (a.v + Math.log(a.weight + 0.01) * 3) > (b.v + Math.log(b.weight + 0.01) * 3) ? a : b
+    );
+    model1Vdot = best.v;
   }
 
-  // ── Method 2: HR ratio (sanity check, low weight) ─────────────────────────
-  if (maxHR > 0 && restHR > 0) {
-    estimates.push(vo2maxFromHRRatio(maxHR, restHR));
+  // ── MODEL 2: Uth-Sørensen (2003) ─────────────────────────────────────────
+  const model2 = restHR > 0 && maxHR > 0 ? vo2maxUth(maxHR, restHR) : null;
+
+  // ── MODEL 3: Cooper (1968) ────────────────────────────────────────────────
+  const model3 = restHR > 0 && maxHR > 0 ? vo2maxCooper(maxHR, restHR) : null;
+
+  // ── MODEL 4: HR-pace regression (Firstbeat-style) ────────────────────────
+  const regressionRuns = runs
+    .filter(a => a.avgHR && a.distanceM >= 3000 && a.timeSec > 0)
+    .map(a => ({ avgHR: a.avgHR!, avgPaceSecPerKm: a.timeSec / (a.distanceM / 1000) }));
+  const model4 = maxHR > 0 ? vo2maxHRPaceRegression(regressionRuns, maxHR) : null;
+
+  // ── MODEL 5: Fitness decay bridge ────────────────────────────────────────
+  // If we have a recent good VDOT but nothing current, apply decay
+  let model5Vdot: number | null = null;
+  if (model1Vdot) {
+    const lastQualityDate = candidates.length > 0
+      ? runs.filter(a => isQualitySession(a, easyPaceThreshold) && a.startDate)
+          .sort((a, b) => (b.startDate!.getTime()) - (a.startDate!.getTime()))
+          .at(0)?.startDate
+      : undefined;
+    const daysSinceQuality = lastQualityDate
+      ? (Date.now() - lastQualityDate.getTime()) / (1000 * 60 * 60 * 24) : 999;
+    const hasRecentEasy = runs.some(a =>
+      a.startDate && (Date.now() - a.startDate.getTime()) / (1000 * 60 * 60 * 24) < 30
+    );
+    model5Vdot = applyFitnessDecay(model1Vdot, daysSinceQuality, hasRecentEasy);
   }
 
-  if (estimates.length === 0) {
+  // ── WEIGHTED MEAN ─────────────────────────────────────────────────────────
+  type ModelEntry = [number | null, number, string];
+  const models: ModelEntry[] = [
+    [model1Vdot,  0.50, "VDOT (pace)"],
+    [model4,      0.20, "HR-pace regression"],
+    [model2,      0.15, "Uth-Sørensen"],
+    [model3,      0.10, "Cooper"],
+    [model5Vdot,  0.05, "decay bridge"],
+  ];
+
+  const available = models.filter(([v]) => v !== null && v > 35 && v < 90);
+  if (available.length === 0) {
     return { value: 45, vdot: 45, confidence: "low", method: "default estimate" };
   }
 
-  // Pace-based estimate dominates (0.85 weight), HR-ratio as minor cross-check
-  const value = candidates.length > 0
-    ? estimates[0] * 0.85 + (estimates[1] ?? estimates[0]) * 0.15
-    : estimates[0];
+  const totalWeight = available.reduce((s, [, w]) => s + w, 0);
+  const weightedSum = available.reduce((s, [v, w]) => s + v! * w, 0);
+  const mean = weightedSum / totalWeight;
 
-  const clamped = Math.min(Math.max(value, 25), 90);
+  const clamped = Math.min(Math.max(mean, 25), 90);
+  const breakdown = Object.fromEntries(available.map(([v, , name]) => [name, Math.round(v! * 10) / 10]));
+
+  const primaryMethod = available[0][2]; // highest-weight available method
+  const methodStr = `${primaryMethod} + ${available.length - 1} models (weighted mean)`;
 
   return {
     value: Math.round(clamped * 10) / 10,
-    vdot: Math.round(clamped * 10) / 10,
-    confidence: candidates.length >= 3 ? "high" : candidates.length >= 1 ? "medium" : "low",
-    method: bestMethod,
+    vdot:  Math.round(clamped * 10) / 10,
+    confidence: model1Vdot ? (candidates.length >= 3 ? "high" : "medium") : "low",
+    method: methodStr,
+    breakdown,
   };
-}
-
-// Predict race time from VDOT for a given distance.
-// vdotFromRace is a DECREASING function of time (faster = higher VDOT),
-// so when the estimate is too high we need MORE time (move lo up), and
-// when too low we need LESS time (move hi down).
-export function predictRaceTime(vdot: number, distanceM: number): number {
-  let lo = distanceM / 15; // fastest plausible (e.g. 4 min/km for 5K)
-  let hi = distanceM * 3;  // slowest plausible
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    const estimated = vdotFromRace(distanceM, mid);
-    if (estimated > vdot) {
-      lo = mid; // estimated VDOT too high → need more time → raise lo
-    } else {
-      hi = mid; // estimated VDOT too low → need less time → lower hi
-    }
-  }
-  return Math.round((lo + hi) / 2);
-}
-
-// TSB-adjusted race time: account for current fatigue.
-export function tsbAdjustedRaceTime(baseTimeSec: number, tsb: number): number {
-  // TSB 0 = neutral, positive = fresh, negative = fatigued
-  // Rough: each -10 TSB points = ~0.5% slower
-  const adjustment = Math.max(Math.min(-tsb * 0.0005, 0.08), -0.04);
-  return Math.round(baseTimeSec * (1 + adjustment));
 }
