@@ -44,6 +44,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── Budget check ────────────────────────────────────────────────────────
+  if (aiSettings) {
+    const budget  = provider === "gemini" ? aiSettings.geminiMonthlyBudgetUsd  : aiSettings.monthlyBudgetUsd;
+    const current = provider === "gemini" ? aiSettings.geminiCurrentMonthSpendUsd : aiSettings.currentMonthSpendUsd;
+    if (budget > 0 && current >= budget) {
+      return new Response(
+        JSON.stringify({ error: "budget_exceeded", provider, budget, current }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+  }
+
   // ── Load or create conversation ─────────────────────────────────────
   let convId = conversationId;
   if (!convId) {
@@ -128,12 +140,15 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        // Update monthly spend
+        // Update monthly spend for the correct provider
         if (cost > 0) {
+          const spendField = provider === "gemini"
+            ? { geminiCurrentMonthSpendUsd: { increment: cost } }
+            : { currentMonthSpendUsd: { increment: cost } };
           await prisma.aISettings.upsert({
             where: { userId },
-            create: { userId, currentMonthSpendUsd: cost },
-            update: { currentMonthSpendUsd: { increment: cost } },
+            create: { userId, ...spendField },
+            update: spendField,
           });
         }
 

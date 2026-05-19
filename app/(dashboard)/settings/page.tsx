@@ -92,6 +92,8 @@ export default async function SettingsPage() {
           hasGeminiKey={!!aiSettings?.geminiApiKey}
           monthlyBudget={aiSettings?.monthlyBudgetUsd ?? 5}
           currentSpend={aiSettings?.currentMonthSpendUsd ?? 0}
+          geminiMonthlyBudget={aiSettings?.geminiMonthlyBudgetUsd ?? 5}
+          geminiCurrentSpend={aiSettings?.geminiCurrentMonthSpendUsd ?? 0}
         />
       </IntegrationCard>
 

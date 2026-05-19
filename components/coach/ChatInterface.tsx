@@ -58,10 +58,14 @@ export function ChatInterface({ provider, hasApiKey, monthlyBudget, currentSpend
 
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: "Request failed" }));
+        let errMsg = err.error ?? "Unknown error";
+        if (err.error === "budget_exceeded") {
+          errMsg = `Monthly budget reached ($${err.budget?.toFixed(2)} limit). Reset in Settings or increase the budget.`;
+        } else if (err.error === "no_api_key") {
+          errMsg = "No API key configured. Add one in Settings → AI Coach.";
+        }
         setMessages(prev => prev.map(m =>
-          m.id === assistantId
-            ? { ...m, content: `Error: ${err.error ?? "Unknown error"}` }
-            : m
+          m.id === assistantId ? { ...m, content: errMsg } : m
         ));
         return;
       }

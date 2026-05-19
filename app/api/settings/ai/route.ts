@@ -5,10 +5,11 @@ import { encryptIfNeeded } from "@/lib/encrypt";
 import { z } from "zod";
 
 const schema = z.object({
-  provider: z.enum(["claude", "gemini"]),
-  claudeApiKey: z.string().optional(),
-  geminiApiKey: z.string().optional(),
-  monthlyBudgetUsd: z.number().min(0).max(1000),
+  provider:              z.enum(["claude", "gemini"]),
+  claudeApiKey:          z.string().optional(),
+  geminiApiKey:          z.string().optional(),
+  monthlyBudgetUsd:      z.number().min(0).max(1000),
+  geminiMonthlyBudgetUsd: z.number().min(0).max(1000).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -19,23 +20,20 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 
-  const { provider, claudeApiKey, geminiApiKey, monthlyBudgetUsd } = parsed.data;
+  const { provider, claudeApiKey, geminiApiKey, monthlyBudgetUsd, geminiMonthlyBudgetUsd } = parsed.data;
+
+  const data = {
+    provider,
+    ...(claudeApiKey ? { claudeApiKey: encryptIfNeeded(claudeApiKey)! } : {}),
+    ...(geminiApiKey ? { geminiApiKey: encryptIfNeeded(geminiApiKey)! } : {}),
+    monthlyBudgetUsd,
+    ...(geminiMonthlyBudgetUsd !== undefined ? { geminiMonthlyBudgetUsd } : {}),
+  };
 
   await prisma.aISettings.upsert({
     where: { userId: session.user.id },
-    create: {
-      userId: session.user.id,
-      provider,
-      ...(claudeApiKey ? { claudeApiKey: encryptIfNeeded(claudeApiKey)! } : {}),
-      ...(geminiApiKey ? { geminiApiKey: encryptIfNeeded(geminiApiKey)! } : {}),
-      monthlyBudgetUsd,
-    },
-    update: {
-      provider,
-      ...(claudeApiKey ? { claudeApiKey: encryptIfNeeded(claudeApiKey)! } : {}),
-      ...(geminiApiKey ? { geminiApiKey: encryptIfNeeded(geminiApiKey)! } : {}),
-      monthlyBudgetUsd,
-    },
+    create: { userId: session.user.id, ...data },
+    update: data,
   });
 
   return NextResponse.json({ ok: true });

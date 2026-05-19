@@ -11,13 +11,16 @@ interface Props {
   hasGeminiKey: boolean;
   monthlyBudget: number;
   currentSpend: number;
+  geminiMonthlyBudget: number;
+  geminiCurrentSpend: number;
 }
 
-export function AISettingsSection({ provider, hasClaudeKey, hasGeminiKey, monthlyBudget, currentSpend }: Props) {
+export function AISettingsSection({ provider, hasClaudeKey, hasGeminiKey, monthlyBudget, currentSpend, geminiMonthlyBudget, geminiCurrentSpend }: Props) {
   const [activeProvider, setActiveProvider] = useState(provider);
   const [claudeKey, setClaudeKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [budget, setBudget] = useState(String(monthlyBudget));
+  const [geminiBudget, setGeminiBudget] = useState(String(geminiMonthlyBudget));
   const [showClaude, setShowClaude] = useState(false);
   const [showGemini, setShowGemini] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -38,6 +41,7 @@ export function AISettingsSection({ provider, hasClaudeKey, hasGeminiKey, monthl
           claudeApiKey: claudeKey || undefined,
           geminiApiKey: geminiKey || undefined,
           monthlyBudgetUsd: parseFloat(budget) || 5,
+          geminiMonthlyBudgetUsd: parseFloat(geminiBudget) || 5,
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
@@ -59,7 +63,7 @@ export function AISettingsSection({ provider, hasClaudeKey, hasGeminiKey, monthl
         <p className="text-xs font-medium text-muted mb-2">Active AI provider</p>
         <div className="flex gap-2">
           {[
-            { id: "gemini", label: "Gemini Flash", sub: "Free tier" },
+            { id: "gemini", label: "Gemini Flash", sub: "Free / Paid tier" },
             { id: "claude", label: "Claude", sub: "~$1–5/mo" },
           ].map(({ id, label, sub }) => (
             <button
@@ -103,6 +107,36 @@ export function AISettingsSection({ provider, hasClaudeKey, hasGeminiKey, monthl
           >
             {showGemini ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
+        </div>
+
+        {/* Gemini budget (paid tier) */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-muted">
+            Monthly budget — paid tier (USD, set 0 for unlimited)
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted">$</span>
+            <input type="number" min="0" step="1" value={geminiBudget}
+              onChange={e => setGeminiBudget(e.target.value)}
+              className="w-20 rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm font-mono text-primary focus:outline-none focus:ring-2 focus:ring-accent/50 transition" />
+          </div>
+          {geminiCurrentSpend > 0 && (() => {
+            const pct = geminiMonthlyBudget > 0 ? Math.min((geminiCurrentSpend / geminiMonthlyBudget) * 100, 100) : 0;
+            return (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted">
+                  <span>This month: ${geminiCurrentSpend.toFixed(4)}</span>
+                  {geminiMonthlyBudget > 0 && <span className={pct >= 100 ? "text-error" : pct >= 80 ? "text-warning" : ""}>{pct.toFixed(0)}% of ${geminiMonthlyBudget}</span>}
+                </div>
+                {geminiMonthlyBudget > 0 && (
+                  <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                    <div className={cn("h-full rounded-full transition-all", pct >= 100 ? "bg-error" : pct >= 80 ? "bg-warning" : "bg-accent")}
+                      style={{ width: `${pct}%` }} />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 
