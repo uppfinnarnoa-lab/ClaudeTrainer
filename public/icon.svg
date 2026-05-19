@@ -1,19 +1,31 @@
 <svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" fill="none">
   <defs>
-    <mask id="pulse-cut">
+    <!--
+      Activity icon path rotated 90° CW and scaled to fit the T stem.
+      Original Lucide path (24x24): M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36
+        a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36
+        A2 2 0 0 1 4.49 12H2
+      Key waypoints rotated 90° CW and scaled to stem area (x=14.5–25.5, y=21–37):
+        top-center → slight-right → spike-right → spike-left → recover → bottom-center
+    -->
+    <mask id="act-cut">
       <rect width="40" height="40" fill="white"/>
       <polyline
-        points="16,26 18,22 20,31 22,22 24,26"
+        points="20,21 20,23 21.5,24.5 28,27 12,32 19.5,34 20,37"
         stroke="black"
-        stroke-width="2.5"
+        stroke-width="3"
         stroke-linecap="round"
         stroke-linejoin="round"
+        fill="none"
       />
     </mask>
   </defs>
-  <rect width="40" height="40" rx="9" fill="#0F1117"/>
-  <g mask="url(#pulse-cut)" fill="#6EE7B7">
-    <rect x="4" y="9" width="32" height="7" rx="1.5"/>
-    <rect x="16" y="16" width="8" height="21" rx="1.5"/>
+
+  <!-- Bold T — no background, transparent, accent color -->
+  <g mask="url(#act-cut)" fill="#6EE7B7">
+    <!-- Crossbar: bold, sharp corners -->
+    <rect x="3" y="8" width="34" height="9" rx="0.5"/>
+    <!-- Stem: wider and bolder -->
+    <rect x="14.5" y="17" width="11" height="21" rx="0.5"/>
   </g>
 </svg>
