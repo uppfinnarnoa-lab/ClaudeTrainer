@@ -12,9 +12,10 @@ interface Props {
   workouts: PlannedWorkout[];
   block?: TrainingBlock;
   onClick?: () => void;
+  compact?: boolean; // sidebar mode: vertical stack instead of horizontal row
 }
 
-export function WeekSummaryStrip({ weekStart, workouts, block, onClick }: Props) {
+export function WeekSummaryStrip({ weekStart, workouts, block, onClick, compact }: Props) {
   const router = useRouter();
 
   function handleClick() {

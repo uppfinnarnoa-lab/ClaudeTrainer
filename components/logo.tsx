@@ -38,17 +38,21 @@ export function Logo({ size = 32, className }: Props) {
 
 /**
  * Wordmark: [T-icon]rainingLab
- * The icon replaces the letter T in "Training".
+ * The icon IS the "T" — text follows immediately with no gap.
+ * Negative left margin compensates for the ~5% empty space on the
+ * right side of the SVG viewbox after the T shape ends.
  */
 export function LogoWordmark({ size = 32, className }: Props) {
-  const fontSize = size * 0.52;
+  const fontSize   = size * 0.52;
+  // Pull text left so 'r' starts right where the T's right edge ends visually
+  const pullIn     = -(size * 0.06);
 
   return (
-    <div className={`flex items-end ${className ?? ""}`} style={{ gap: size * 0.04 }}>
+    <div className={`flex items-end ${className ?? ""}`} style={{ gap: 0 }}>
       <Logo size={size} />
       <span
         className="font-semibold tracking-tight text-primary leading-none"
-        style={{ fontSize }}
+        style={{ fontSize, marginLeft: pullIn, paddingBottom: size * 0.03 }}
       >
         raining<span className="text-accent">Lab</span>
       </span>

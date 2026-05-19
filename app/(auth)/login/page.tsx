@@ -1,5 +1,5 @@
 "use client";
-import { Logo } from "@/components/logo";
+import { LogoWordmark } from "@/components/logo";
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
@@ -37,16 +37,9 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="text-center mb-8 space-y-3">
-          <div className="flex justify-center">
-            <Logo size={52} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-primary">
-              Training<span className="text-accent">Lab</span>
-            </h1>
-            <p className="mt-1 text-sm text-muted">Your personal AI training coach</p>
-          </div>
+        <div className="flex flex-col items-center mb-8 gap-2">
+          <LogoWordmark size={52} />
+          <p className="text-sm text-muted">Your personal AI training coach</p>
         </div>
 
         {/* Card */}

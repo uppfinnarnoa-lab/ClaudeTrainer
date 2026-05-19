@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { ChevronLeft, ChevronRight, AlignJustify, PanelLeft } from "lucide-react";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, format, isSameMonth, isToday,
@@ -12,6 +12,9 @@ import { WeekSummaryStrip } from "./WeekSummaryStrip";
 import type { PlannedWorkout, TrainingBlock } from "@/lib/planner/types";
 import { cn } from "@/lib/utils";
 
+type SummaryLayout = "row" | "sidebar";
+const PREF_KEY = "planner_summary_layout";
+
 interface Props {
   workouts: PlannedWorkout[];
   blocks: TrainingBlock[];
@@ -21,6 +24,19 @@ interface Props {
 
 export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick }: Props) {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
+  const [summaryLayout, setSummaryLayout] = useState<SummaryLayout>("row");
+
+  // Persist layout preference
+  useEffect(() => {
+    const saved = localStorage.getItem(PREF_KEY) as SummaryLayout | null;
+    if (saved === "sidebar" || saved === "row") setSummaryLayout(saved);
+  }, []);
+
+  function toggleLayout() {
+    const next: SummaryLayout = summaryLayout === "row" ? "sidebar" : "row";
+    setSummaryLayout(next);
+    localStorage.setItem(PREF_KEY, next);
+  }
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -80,14 +96,28 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick }
         <h2 className="text-base font-semibold text-primary">
           {format(currentMonth, "MMMM yyyy")}
         </h2>
-        <button onClick={() => setCurrentMonth(m => addMonths(m, 1))}
-          className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition">
-          <ChevronRight size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Layout toggle */}
+          <button
+            onClick={toggleLayout}
+            title={summaryLayout === "row" ? "Switch to sidebar view" : "Switch to row view"}
+            className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition"
+          >
+            {summaryLayout === "row" ? <PanelLeft size={16} /> : <AlignJustify size={16} />}
+          </button>
+          <button onClick={() => setCurrentMonth(m => addMonths(m, 1))}
+            className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition">
+            <ChevronRight size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Weekday headers */}
-      <div className="grid grid-cols-7 mb-1 gap-x-1">
+      <div className={cn(
+        "mb-1 gap-x-1",
+        summaryLayout === "sidebar" ? "grid grid-cols-[120px_1fr_1fr_1fr_1fr_1fr_1fr_1fr]" : "grid grid-cols-7"
+      )}>
+        {summaryLayout === "sidebar" && <div />}
         {["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"].map(d => (
           <div key={d} className="text-center text-xs font-medium text-muted py-1">{d}</div>
         ))}
@@ -100,10 +130,30 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick }
           const weekWorkouts = week.flatMap(d => byDate.get(format(d, "yyyy-MM-dd")) ?? []);
           const weekBlock = blockForDate(weekStart);
 
+          // sidebar mode: [summary col | 7 day cols]
+          const isSidebar = summaryLayout === "sidebar";
+
           return (
             <div key={wi} className="space-y-1">
-              {/* Day cells — 7-column grid */}
-              <div className="grid grid-cols-7 gap-x-1">
+              <div className={cn(
+                "gap-x-1",
+                isSidebar ? "grid grid-cols-[120px_1fr_1fr_1fr_1fr_1fr_1fr_1fr]" : "grid grid-cols-7"
+              )}>
+                {/* Sidebar summary column */}
+                {isSidebar && (
+                  <div className="flex items-stretch">
+                    {weekWorkouts.length > 0 ? (
+                      <WeekSummaryStrip
+                        weekStart={weekStart}
+                        workouts={weekWorkouts}
+                        block={weekBlock}
+                        compact
+                      />
+                    ) : <div className="w-full" />}
+                  </div>
+                )}
+
+                {/* Day cells */}
                 {week.map(day => {
                   const key = format(day, "yyyy-MM-dd");
                   const dayWorkouts = byDate.get(key) ?? [];
@@ -153,8 +203,8 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick }
                 })}
               </div>
 
-              {/* Week summary — full-width strip below the day cells */}
-              {weekWorkouts.length > 0 && (
+              {/* Row mode: full-width summary below */}
+              {!isSidebar && weekWorkouts.length > 0 && (
                 <WeekSummaryStrip
                   weekStart={weekStart}
                   workouts={weekWorkouts}
