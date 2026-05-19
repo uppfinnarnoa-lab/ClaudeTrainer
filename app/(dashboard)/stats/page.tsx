@@ -12,7 +12,7 @@ type A = {
   distance: number; movingTime: number; totalElevationGain: number;
   averageHeartrate: number | null; maxHeartrate: number | null;
   averageSpeed: number | null; isRace: boolean;
-  bestEfforts: unknown;
+  bestEfforts: unknown; splitsMetric: unknown;
 };
 
 export default async function StatsPage() {
@@ -28,7 +28,7 @@ export default async function StatsPage() {
         id: true, sportType: true, startDate: true, name: true,
         distance: true, movingTime: true, totalElevationGain: true,
         averageHeartrate: true, maxHeartrate: true,
-        averageSpeed: true, isRace: true, bestEfforts: true,
+        averageSpeed: true, isRace: true, bestEfforts: true, splitsMetric: true,
       },
     }),
     prisma.garminDailySummary.findMany({
@@ -67,6 +67,7 @@ export default async function StatsPage() {
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, maxHR: a.maxHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
+      splitsMetric: a.splitsMetric, startDate: a.startDate,
     })),
     maxHR, restHR,
   );
