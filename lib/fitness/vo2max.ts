@@ -212,10 +212,17 @@ interface ActivitySample {
   startDate?: Date;
 }
 
+export interface RacePB {
+  distanceM: number;
+  timeSec: number;
+  date: Date;
+}
+
 export function estimateVO2max(
   activities: ActivitySample[],
   maxHR: number,
   restHR: number,
+  racePBs?: RacePB[],
 ): VO2maxEstimate {
   const isRunning = (a: ActivitySample) => /run|trail/i.test(a.sportType);
   const runs = activities.filter(isRunning);
@@ -257,15 +264,37 @@ export function estimateVO2max(
 
     // From whole-activity pace (only if quality session or race)
     if (!isQualitySession(a, easyPaceThreshold)) continue;
-    if (a.distanceM < 1500 || a.timeSec <= 0) continue;
+    if (a.distanceM < 800 || a.timeSec <= 0) continue;
 
     const isRaceSession = a.isRace || looksLikeRace(a.name ?? "");
-    const BUCKETS = [{ m: 5000, tol: 0.10 }, { m: 3000, tol: 0.12 }, { m: 10000, tol: 0.08 }, { m: 15000, tol: 0.10 }, { m: 21097, tol: 0.08 }];
+    const BUCKETS = [
+      { m: 800,   tol: 0.10 },
+      { m: 1500,  tol: 0.10 },
+      { m: 1609,  tol: 0.08 },
+      { m: 3000,  tol: 0.12 },
+      { m: 5000,  tol: 0.12 },
+      { m: 8000,  tol: 0.12 },
+      { m: 10000, tol: 0.10 },
+      { m: 15000, tol: 0.10 },
+      { m: 21097, tol: 0.08 },
+      { m: 42195, tol: 0.06 },
+    ];
     for (const b of BUCKETS) {
       if (!nearDistance(a.distanceM, b.m)) continue;
-      const factor = isRaceSession ? 1 : (b.m < 8000 ? 0.95 : 0.98);
+      const factor = isRaceSession ? 1 : (b.m < 8000 ? 0.96 : 0.99);
       const v = vdotFromRace(b.m, a.timeSec / factor);
       if (v > 35 && v < 90) candidates.push({ v, weight: w * (isRaceSession ? 1.1 : 0.85), source: isRaceSession ? "race" : "quality-run" });
+    }
+  }
+
+  // Race PBs from stored records — 2× weight multiplier because these are verified race times
+  if (racePBs) {
+    for (const pb of racePBs) {
+      if (pb.distanceM >= 800 && pb.timeSec > 0) {
+        const w = recencyWeight(pb.date) * 2.0;
+        const v = vdotFromRace(pb.distanceM, pb.timeSec);
+        if (v > 35 && v < 90) candidates.push({ v, weight: w, source: "race-pb" });
+      }
     }
   }
 

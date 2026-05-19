@@ -12,7 +12,7 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold } from "./zones";
-import { estimateVO2max } from "./vo2max";
+import { estimateVO2max, type RacePB } from "./vo2max";
 import { subDays } from "date-fns";
 
 type Act = {
@@ -32,9 +32,25 @@ async function loadActivities(userId: string) {
   });
 }
 
+async function loadRacePBs(userId: string): Promise<RacePB[]> {
+  const records = await prisma.raceRecord.findMany({
+    where: { userId, date: { gte: subDays(new Date(), 5 * 365) } },
+    select: { distanceM: true, time: true, date: true },
+    orderBy: { time: "asc" },
+  });
+  const bestPerDist = new Map<number, RacePB>();
+  for (const r of records) {
+    const d = Math.round(r.distanceM);
+    if (!bestPerDist.has(d) || bestPerDist.get(d)!.timeSec > r.time) {
+      bestPerDist.set(d, { distanceM: r.distanceM, timeSec: r.time, date: r.date });
+    }
+  }
+  return [...bestPerDist.values()];
+}
+
 // ── AUTO path: VO2max + paces (runs after every sync) ─────────────────────
 export async function updateVO2maxAndPaces(userId: string) {
-  const [profile, activities, garminRecent, existingCache] = await Promise.all([
+  const [profile, activities, garminRecent, existingCache, racePBs] = await Promise.all([
     prisma.athleteProfile.findUnique({ where: { userId } }),
     loadActivities(userId),
     prisma.garminDailySummary.findMany({
@@ -42,6 +58,7 @@ export async function updateVO2maxAndPaces(userId: string) {
       orderBy: { date: "asc" }, select: { restingHR: true },
     }),
     prisma.fitnessCache.findUnique({ where: { userId } }),
+    loadRacePBs(userId),
   ]);
 
   // Use stored HR zones if they exist (don't recompute on auto-update)
@@ -54,7 +71,7 @@ export async function updateVO2maxAndPaces(userId: string) {
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
     })),
-    maxHR, restHR,
+    maxHR, restHR, racePBs,
   );
 
   const paceZones = buildPaceZones(vo2maxResult.vdot);
@@ -120,6 +137,8 @@ export async function updateHRZones(userId: string) {
 
   const zonesJson = buildHRZonesJson(maxHR, restHR);
 
+  const racePBs = await loadRacePBs(userId);
+
   // Also recompute VO2max with the updated maxHR
   const vo2maxResult = estimateVO2max(
     (activities as Act[]).map(a => ({
@@ -127,7 +146,7 @@ export async function updateHRZones(userId: string) {
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
     })),
-    maxHR, restHR,
+    maxHR, restHR, racePBs,
   );
   const paceZones = buildPaceZones(vo2maxResult.vdot);
 

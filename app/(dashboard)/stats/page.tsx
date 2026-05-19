@@ -19,7 +19,7 @@ export default async function StatsPage() {
   const session = await auth();
   const userId = session!.user!.id!;
 
-  const [profile, activities, garminRecent] = await Promise.all([
+  const [profile, activities, garminRecent, allRacePBs] = await Promise.all([
     prisma.athleteProfile.findUnique({ where: { userId } }),
     prisma.activity.findMany({
       where: { userId, startDate: { gte: subDays(new Date(), 730) } },
@@ -35,7 +35,22 @@ export default async function StatsPage() {
       where: { userId, date: { gte: subDays(new Date(), 30) } },
       orderBy: { date: "asc" },
     }),
+    prisma.raceRecord.findMany({
+      where: { userId, date: { gte: subDays(new Date(), 5 * 365) } },
+      select: { distanceM: true, time: true, date: true },
+      orderBy: { time: "asc" },
+    }),
   ]);
+
+  // Best verified time per distance from race records
+  const bestPerDist = new Map<number, { distanceM: number; timeSec: number; date: Date }>();
+  for (const r of allRacePBs) {
+    const d = Math.round(r.distanceM);
+    if (!bestPerDist.has(d) || bestPerDist.get(d)!.timeSec > r.time) {
+      bestPerDist.set(d, { distanceM: r.distanceM, timeSec: r.time, date: r.date });
+    }
+  }
+  const racePBs = [...bestPerDist.values()];
 
   // ── HR / max HR ──────────────────────────────────────────────────────
   const maxHRs = (activities as A[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
@@ -69,7 +84,7 @@ export default async function StatsPage() {
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
       splitsMetric: a.splitsMetric, startDate: a.startDate,
     })),
-    maxHR, restHR,
+    maxHR, restHR, racePBs,
   );
   const paceZones = buildPaceZones(vo2max.vdot);
 
@@ -120,13 +135,15 @@ export default async function StatsPage() {
   const lyWeekStart  = subDays(weekStart, 364);
   const lyMonthStart = new Date(now.getFullYear() - 1, now.getMonth(), 1);
   const lyYtdStart   = startOfYear(new Date(now.getFullYear() - 1, 0, 1));
-  const lyYtdEnd     = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-  const lyMonthEnd   = new Date(now.getFullYear() - 1, now.getMonth() + 1, 0);
+  // Truncate prior periods to the same elapsed time as current period
+  const lyWeekEnd  = new Date(lyWeekStart.getTime() + (now.getTime() - weekStart.getTime()));
+  const lyMonthEnd = new Date(lyMonthStart.getTime() + (now.getTime() - monthStart.getTime()));
+  const lyYtdEnd   = new Date(lyYtdStart.getTime() + (now.getTime() - yearStart.getTime()));
 
   const thisWeek  = sum(activities.filter((a: A) => a.startDate >= weekStart));
   const thisMonth = sum(activities.filter((a: A) => a.startDate >= monthStart));
   const ytd       = sum(activities.filter((a: A) => a.startDate >= yearStart));
-  const lyWeek    = sum(activities.filter((a: A) => a.startDate >= lyWeekStart && a.startDate < weekStart && a.startDate <= subDays(weekStart, 357)));
+  const lyWeek    = sum(activities.filter((a: A) => a.startDate >= lyWeekStart && a.startDate <= lyWeekEnd));
   const lyMonth   = sum(activities.filter((a: A) => a.startDate >= lyMonthStart && a.startDate <= lyMonthEnd));
   const lyYtd     = sum(activities.filter((a: A) => a.startDate >= lyYtdStart && a.startDate <= lyYtdEnd));
 
