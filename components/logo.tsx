@@ -15,23 +15,26 @@ export function Logo({ size = 32, className }: Props) {
       aria-label="TrainingLab"
     >
       <defs>
+        {/*
+          Activity-icon waveform running horizontally through the entire T stem.
+          Midline y=27.5 (center of stem y=17–38).
+          Extends from x=7 to x=33 — clearly exits both left edge (x=13)
+          and right edge (x=27) of the stem, creating open channels on both sides.
+          Waveform peak/valley centered at x=20 (horizontal center of stem).
+        */}
         <mask id="act-cut">
           <rect width="40" height="40" fill="white" />
-          {/* Activity waveform — sharp corners (miter + butt) */}
           <polyline
-            points="14,27.5 16,27.5 17.5,27 19.5,23 19.8,23 21.5,27 23.5,32 25,27.5 29,27.5"
+            points="7,27.5 15,27.5 16.5,27 18.5,22.5 18.8,22.5 21,27.5 22,32.5 23.5,27.5 33,27.5"
             stroke="black"
-            strokeWidth="2.8"
+            strokeWidth="3"
             strokeLinecap="butt"
             strokeLinejoin="miter"
             fill="none"
           />
         </mask>
       </defs>
-      {/*
-        T drawn as one combined path so crossbar+stem are seamless.
-        Crossbar: y=7–17. Stem: y=16–38 (1px overlap eliminates the gap).
-      */}
+      {/* Bold T — single compound path, no seam, transparent background */}
       <path
         d="M2,7 H38 V17 H27 V38 H13 V17 H2 Z"
         fill="#6EE7B7"
