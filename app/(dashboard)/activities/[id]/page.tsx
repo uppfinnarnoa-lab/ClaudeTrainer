@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { formatDuration, formatDistance, formatPace, sportColor } from "@/lib/utils";
 import { ActivityMap } from "./activity-map";
 import { SplitsTable } from "./splits-table";
+import { ActivityCharts } from "./activity-charts";
 
 export default async function ActivityDetailPage({
   params,
@@ -132,6 +133,12 @@ export default async function ActivityDetailPage({
           <ActivityMap polyline={activity.mapPolyline} color={color} />
         </div>
       )}
+
+      {/* Pace / HR / elevation charts from Strava streams */}
+      <div className="rounded-2xl bg-surface border border-border p-5 space-y-1">
+        <p className="text-sm font-semibold text-primary mb-3">Performance charts</p>
+        <ActivityCharts activityId={activity.id} />
+      </div>
 
       {/* Splits */}
       {splits && splits.length > 0 && (
