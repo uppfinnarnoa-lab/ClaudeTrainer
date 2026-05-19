@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { encryptIfNeeded } from "@/lib/encrypt";
 import { z } from "zod";
 
 const schema = z.object({
@@ -25,14 +26,14 @@ export async function POST(req: NextRequest) {
     create: {
       userId: session.user.id,
       provider,
-      ...(claudeApiKey ? { claudeApiKey } : {}),
-      ...(geminiApiKey ? { geminiApiKey } : {}),
+      ...(claudeApiKey ? { claudeApiKey: encryptIfNeeded(claudeApiKey)! } : {}),
+      ...(geminiApiKey ? { geminiApiKey: encryptIfNeeded(geminiApiKey)! } : {}),
       monthlyBudgetUsd,
     },
     update: {
       provider,
-      ...(claudeApiKey ? { claudeApiKey } : {}),
-      ...(geminiApiKey ? { geminiApiKey } : {}),
+      ...(claudeApiKey ? { claudeApiKey: encryptIfNeeded(claudeApiKey)! } : {}),
+      ...(geminiApiKey ? { geminiApiKey: encryptIfNeeded(geminiApiKey)! } : {}),
       monthlyBudgetUsd,
     },
   });

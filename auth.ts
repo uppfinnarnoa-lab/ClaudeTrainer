@@ -10,11 +10,21 @@ const loginSchema = z.object({
   password: z.string().min(8),
 });
 
+const isProd = process.env.NODE_ENV === "production";
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
+  pages: { signIn: "/login" },
+  cookies: {
+    sessionToken: {
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: isProd,
+      },
+    },
   },
   providers: [
     Credentials({

@@ -6,6 +6,7 @@ import { GeminiClient } from "@/lib/ai/gemini";
 import { buildCoachContext, buildRecentActivitiesSummary } from "@/lib/ai/context-builder";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { estimateCost } from "@/lib/ai/client";
+import { safeDecrypt } from "@/lib/encrypt";
 import type { AIMessage } from "@/lib/ai/client";
 import { z } from "zod";
 
@@ -33,8 +34,8 @@ export async function POST(req: NextRequest) {
 
   const provider = aiSettings?.provider ?? "gemini";
   const apiKey = provider === "claude"
-    ? (aiSettings?.claudeApiKey ?? process.env.ANTHROPIC_API_KEY ?? "")
-    : (aiSettings?.geminiApiKey ?? process.env.GOOGLE_AI_API_KEY ?? "");
+    ? (safeDecrypt(aiSettings?.claudeApiKey) ?? process.env.ANTHROPIC_API_KEY ?? "")
+    : (safeDecrypt(aiSettings?.geminiApiKey) ?? process.env.GOOGLE_AI_API_KEY ?? "");
 
   if (!apiKey) {
     return new Response(
@@ -50,6 +51,15 @@ export async function POST(req: NextRequest) {
       data: { userId, title: message.slice(0, 60) },
     });
     convId = conv.id;
+  } else {
+    // Verify the conversation belongs to this user before appending
+    const conv = await prisma.conversation.findUnique({
+      where: { id: convId },
+      select: { userId: true },
+    });
+    if (!conv || conv.userId !== userId) {
+      return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+    }
   }
 
   // ── Load history ────────────────────────────────────────────────────

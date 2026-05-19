@@ -7,7 +7,7 @@ const schema = z.object({
   name:            z.string().max(100).optional().nullable(),
   weightKg:        z.coerce.number().min(30).max(300).optional().nullable(),
   heightCm:        z.coerce.number().min(100).max(250).optional().nullable(),
-  dateOfBirth:     z.string().optional().nullable(),
+  dateOfBirth:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
   sex:             z.enum(["male", "female", "other", ""]).optional().nullable(),
   maxHeartRate:    z.coerce.number().min(100).max(230).optional().nullable(),
   restingHeartRate:z.coerce.number().min(20).max(100).optional().nullable(),

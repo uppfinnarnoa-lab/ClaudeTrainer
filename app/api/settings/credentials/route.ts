@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { invalidateCredentialsCache } from "@/lib/config";
+import { encryptIfNeeded } from "@/lib/encrypt";
 import { z } from "zod";
 
 const schema = z.object({
@@ -19,12 +20,12 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid" }, { status: 400 });
 
-  // Only update fields that were explicitly provided (non-undefined)
+  // Encrypt secrets before storing; only update fields explicitly provided
   const data: Record<string, string | null> = {};
   if (parsed.data.stravaClientId     !== undefined) data.stravaClientId     = parsed.data.stravaClientId ?? null;
-  if (parsed.data.stravaClientSecret !== undefined) data.stravaClientSecret = parsed.data.stravaClientSecret ?? null;
+  if (parsed.data.stravaClientSecret !== undefined) data.stravaClientSecret = encryptIfNeeded(parsed.data.stravaClientSecret);
   if (parsed.data.garminClientId     !== undefined) data.garminClientId     = parsed.data.garminClientId ?? null;
-  if (parsed.data.garminClientSecret !== undefined) data.garminClientSecret = parsed.data.garminClientSecret ?? null;
+  if (parsed.data.garminClientSecret !== undefined) data.garminClientSecret = encryptIfNeeded(parsed.data.garminClientSecret);
 
   await prisma.appConfig.upsert({
     where:  { userId: session.user.id },

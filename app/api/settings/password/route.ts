@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { checkRateLimit } from "@/lib/rate-limit";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
@@ -12,6 +13,15 @@ const schema = z.object({
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // 5 attempts per 15 minutes per user
+  const rl = checkRateLimit(`pw:${session.user.id}`, 5, 900);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Too many attempts. Try again in ${rl.resetIn}s.` },
+      { status: 429, headers: { "Retry-After": String(rl.resetIn) } }
+    );
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
