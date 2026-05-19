@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { formatDuration, formatDistance, formatPace, sportColor } from "@/lib/utils";
 import { ActivityMap } from "./activity-map";
 import { SplitsTable } from "./splits-table";
+import { SplitsChart } from "./splits-chart";
 import { ActivityCharts } from "./activity-charts";
 
 export default async function ActivityDetailPage({
@@ -140,7 +141,14 @@ export default async function ActivityDetailPage({
         <ActivityCharts activityId={activity.id} />
       </div>
 
-      {/* Splits */}
+      {/* Splits chart */}
+      {splits && splits.length > 1 && (
+        <div className="rounded-2xl bg-surface border border-border p-5">
+          <SplitsChart splits={splits} avgSpeedMs={activity.averageSpeed ?? 0} />
+        </div>
+      )}
+
+      {/* Splits table */}
       {splits && splits.length > 0 && (
         <SplitsTable splits={splits} />
       )}
