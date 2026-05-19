@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
-  { href: "/",           icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard" },
   { href: "/activities", icon: Activity,        label: "Activities" },
   { href: "/stats",      icon: BarChart3,       label: "Statistics" },
   { href: "/planner",    icon: Calendar,        label: "Planner" },
@@ -38,7 +38,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {nav.map(({ href, icon: Icon, label }) => {
-          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
           return (
             <Link
               key={href}
