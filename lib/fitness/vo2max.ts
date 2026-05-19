@@ -60,20 +60,32 @@ export function vo2maxFromSubmaxEffort(
 
 // ─── Combined estimate ────────────────────────────────────────────────────
 
-// Race-like keyword detection — catches fast efforts not marked workout_type=1
 function looksLikeRace(name: string): boolean {
-  return /tävl|race|lopp|mila|stafett|sic\b|sprint.*ol|parkrun|time.?trial|tt\b|timed|5k|10k|half.?marathon|halvmara/i
+  return /tävl|race|lopp|mila|stafett|sic\b|parkrun|time.?trial|tt\b|5k|10k|halvmara|half.?marathon/i
     .test(name);
+}
+
+// Is this activity approximately a given distance? (±8%)
+function nearDistance(distM: number, targetM: number) {
+  return Math.abs(distM - targetM) / targetM < 0.08;
+}
+
+function percentile(arr: number[], p: number): number {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.floor(sorted.length * p);
+  return sorted[Math.min(idx, sorted.length - 1)];
 }
 
 interface ActivitySample {
   distanceM: number;
   timeSec: number;
   avgHR: number | null;
+  maxHR?: number | null;
   isRace: boolean;
   sportType: string;
   name?: string;
-  bestEfforts?: unknown; // JSON from Strava
+  bestEfforts?: unknown;
 }
 
 export function estimateVO2max(
@@ -84,79 +96,67 @@ export function estimateVO2max(
   const estimates: number[] = [];
   let bestMethod = "HR ratio";
 
-  // Method 1: Best VDOT from race-like efforts
-  // Includes: isRace=true AND name-keyword races AND best efforts from Strava
   const isRunning = (a: ActivitySample) =>
-    a.sportType.toLowerCase().includes("run") || a.sportType.toLowerCase().includes("trail");
+    /run|trail/i.test(a.sportType);
 
-  // 1a. Marked races + keyword races (treated as maximal efforts)
-  const raceEfforts = activities.filter(a =>
-    isRunning(a) && a.distanceM >= 1500 &&
-    (a.isRace || looksLikeRace(a.name ?? ""))
-  );
+  const runs = activities.filter(isRunning);
 
-  // 1b. Strava bestEfforts JSON — per-distance PRs across ALL activities
-  const bestEffortVdots: number[] = [];
-  for (const a of activities) {
-    if (!a.bestEfforts || !isRunning(a)) continue;
+  // ── Strategy: find the BEST pace over each standard distance ─────────────
+  // For each target distance bucket, find the fastest run of roughly that length.
+  // This catches parkruns, races, time trials, and any fast training session.
+  // Marked races get no correction (true race pace).
+  // Other fast activities get a small correction since avg pace < race pace.
+  const DISTANCE_BUCKETS = [
+    { name: "5K",   target: 5000,  tol: 0.10 },
+    { name: "3K",   target: 3000,  tol: 0.12 },
+    { name: "10K",  target: 10000, tol: 0.08 },
+    { name: "15K",  target: 15000, tol: 0.10 },
+    { name: "HM",   target: 21097, tol: 0.08 },
+    { name: "Mar",  target: 42195, tol: 0.05 },
+  ];
+
+  const paceVdots: { v: number; source: string }[] = [];
+
+  for (const bucket of DISTANCE_BUCKETS) {
+    const candidates = runs
+      .filter(a => nearDistance(a.distanceM, bucket.target) && a.timeSec > 0)
+      .sort((a, b) => (a.timeSec / a.distanceM) - (b.timeSec / b.distanceM)); // fastest first
+
+    if (candidates.length === 0) continue;
+
+    // Take the fastest 3 and use the median to avoid outlier sessions
+    const top = candidates.slice(0, 3);
+    const times = top.map(a => {
+      const isRaceSession = a.isRace || looksLikeRace(a.name ?? "");
+      // Non-race activities: avg pace = ~95% of race pace for short, ~98% for long
+      const factor = isRaceSession ? 1 : (bucket.target < 8000 ? 0.95 : 0.98);
+      return a.timeSec / factor;
+    });
+    const medianTime = times[Math.floor(times.length / 2)];
+    const v = vdotFromRace(bucket.target, medianTime);
+    if (v > 35 && v < 90) {
+      paceVdots.push({ v, source: `${bucket.name} best pace` });
+    }
+  }
+
+  // Also: bestEfforts JSON from Strava (most reliable if present)
+  for (const a of runs) {
+    if (!a.bestEfforts) continue;
     try {
       const efforts = a.bestEfforts as Array<{ distance: number; elapsed_time: number }>;
       for (const e of efforts) {
         if (e.distance >= 1500 && e.elapsed_time > 0) {
           const v = vdotFromRace(e.distance, e.elapsed_time);
-          if (v > 35 && v < 90) bestEffortVdots.push(v);
+          if (v > 35 && v < 90) paceVdots.push({ v, source: "Strava best effort" });
         }
       }
     } catch { /* malformed JSON */ }
   }
 
-  // 1c. Hard intervals / track sessions — use activity avg pace if HR was high
-  //     Catches Tisdagsbana, OLGY, 5x4, 4x10 etc. even without race flag.
-  //     If avg HR > 88% maxHR during a run ≥ 3 km, treat avg pace as a near-maximal
-  //     effort and compute VDOT. This is conservative — actual race pace > avg pace.
-  const hardRunVdots: number[] = [];
-  if (maxHR > 0) {
-    for (const a of activities) {
-      if (!isRunning(a)) continue;
-      if (!a.avgHR || a.avgHR < maxHR * 0.88) continue;
-      if (a.distanceM < 3000 || a.timeSec < 600) continue;
-      // At ≥ 88% maxHR over ≥ 3 km, this is at/near threshold intensity.
-      // The full activity distance at avg pace underestimates true race pace
-      // for an equivalent effort, so we use 95% of avg pace as proxy.
-      const adjustedTimeSec = a.timeSec * 0.95;
-      const v = vdotFromRace(a.distanceM, adjustedTimeSec);
-      if (v > 35 && v < 90) hardRunVdots.push(v);
-    }
-  }
-
-  // 1d. Top-20 fastest runs by avg pace (any distance 3–25 km, no HR filter).
-  //     Catches fast training sessions that are neither races nor have HR data.
-  //     Applied conservatively: avg pace < true race pace, factor applied by distance.
-  const recentRunVdots: number[] = [];
-  const fastRuns = [...activities]
-    .filter(a => isRunning(a) && a.distanceM >= 3000 && a.distanceM <= 25000 && a.timeSec > 0)
-    .sort((a, b) => (a.timeSec / a.distanceM) - (b.timeSec / b.distanceM))
-    .slice(0, 20);
-
-  for (const a of fastRuns) {
-    // Conservative factor: interval avg pace is ~97% of equivalent race pace,
-    // for longer efforts it's ~99%.
-    const factor = a.distanceM < 8000 ? 0.96 : 0.99;
-    const v = vdotFromRace(a.distanceM, a.timeSec / factor);
-    if (v > 35 && v < 90) recentRunVdots.push(v);
-  }
-
-  const raceVdots = raceEfforts.map(r => vdotFromRace(r.distanceM, r.timeSec))
-    .filter(v => v > 35 && v < 90);
-  const allVdots = [...raceVdots, ...bestEffortVdots, ...hardRunVdots, ...recentRunVdots];
-
-  if (allVdots.length > 0) {
-    const best = Math.max(...allVdots);
-    estimates.push(best);
-    bestMethod = raceVdots.includes(best)       ? "race performance (VDOT)" :
-                 bestEffortVdots.includes(best)  ? "best effort data (VDOT)" :
-                 hardRunVdots.includes(best)     ? "hard effort / high-HR run (VDOT)" :
-                                                   "fastest training run (VDOT)";
+  if (paceVdots.length > 0) {
+    const best = paceVdots.reduce((a, b) => a.v > b.v ? a : b);
+    estimates.push(best.v);
+    bestMethod = best.source;
   }
 
   // Method 2: HR ratio
@@ -197,7 +197,7 @@ export function estimateVO2max(
   return {
     value: Math.round(clamped * 10) / 10,
     vdot: Math.round(clamped * 10) / 10,
-    confidence: allVdots.length > 0 ? "high" : estimates.length >= 2 ? "medium" : "low",
+    confidence: paceVdots.length > 0 ? "high" : estimates.length >= 2 ? "medium" : "low",
     method: bestMethod,
   };
 }

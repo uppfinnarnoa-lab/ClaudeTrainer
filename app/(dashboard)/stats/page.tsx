@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { StatsClient } from "./stats-client";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, ltBoundaries } from "@/lib/fitness/zones";
+import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries } from "@/lib/fitness/zones";
 import { computeTSS, buildLoadCurve } from "@/lib/fitness/training-load";
 import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime } from "@/lib/fitness/vo2max";
 import { RACE_DISTANCES } from "@/lib/fitness/paces";
@@ -37,21 +37,26 @@ export default async function StatsPage() {
     }),
   ]);
 
-  // ── HR / zones ──────────────────────────────────────────────────────
+  // ── HR / max HR ──────────────────────────────────────────────────────
   const maxHRs = (activities as A[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
 
-  // Threshold-based max HR estimation (more reliable than raw peak)
-  // Use avgHR from hard runs where avgHR > 85% of observed max
+  // Use race-max HRs (most reliable — races push near-true max)
+  const raceMaxHRs = (activities as A[])
+    .filter(a => a.isRace || /tävl|race|lopp|mila|stafett|sic\b|parkrun/i.test(a.name))
+    .flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
+
+  // Threshold-based: avgHR from hard running sessions
   const observedMax = maxHRs.length > 0 ? Math.max(...maxHRs) : 200;
   const thresholdHRs = (activities as A[])
     .filter(a => a.averageHeartrate && a.averageHeartrate > observedMax * 0.82
       && a.sportType.toLowerCase().includes("run"))
     .map(a => a.averageHeartrate!);
-  const thresholdBasedMax = estimateMaxHRFromThreshold(thresholdHRs);
 
+  // Priority: profile override → race-based → threshold-based → percentile fallback
   const maxHR = profile?.maxHeartRate
-    ?? thresholdBasedMax      // prefer threshold-based (more robust)
-    ?? estimateMaxHR(maxHRs); // fallback to 98th percentile of observed
+    ?? estimateMaxHRFromRaces(raceMaxHRs)
+    ?? estimateMaxHRFromThreshold(thresholdHRs)
+    ?? estimateMaxHR(maxHRs);
 
   const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? 50;
   const hrZones = buildHRZones(maxHR, restHR);
@@ -60,7 +65,7 @@ export default async function StatsPage() {
   const vo2max = estimateVO2max(
     activities.map((a: A) => ({
       distanceM: a.distance, timeSec: a.movingTime,
-      avgHR: a.averageHeartrate, isRace: a.isRace,
+      avgHR: a.averageHeartrate, maxHR: a.maxHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
     })),
     maxHR, restHR,

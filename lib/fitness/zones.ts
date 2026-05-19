@@ -30,17 +30,33 @@ export interface PaceZones {
  * The absolute max is used only as a floor (we won't estimate BELOW what was
  * actually observed).
  */
+/**
+ * Estimate max HR from per-activity max HR values.
+ * Uses 95th percentile to filter sensor spikes, +2 bpm margin since
+ * true max is rarely reached in ordinary training.
+ */
 export function estimateMaxHR(activityMaxHRs: number[]): number {
-  if (activityMaxHRs.length === 0) return 190;
-  // Filter out obvious sensor spikes (> 220 or < 100)
-  const clean = activityMaxHRs.filter(h => h >= 100 && h <= 220);
-  if (clean.length === 0) return 190;
-  // 98th percentile to avoid outlier spikes
+  if (activityMaxHRs.length === 0) return 185;
+  const clean = activityMaxHRs.filter(h => h >= 130 && h <= 215);
+  if (clean.length === 0) return 185;
   const sorted = [...clean].sort((a, b) => a - b);
-  const p98idx = Math.floor(sorted.length * 0.98);
-  const p98 = sorted[Math.min(p98idx, sorted.length - 1)];
-  // Add 3 bpm margin: max HR is rarely reached in monitored training
-  return Math.round(p98 + 3);
+  const p95 = sorted[Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1)];
+  return Math.round(p95 + 2);
+}
+
+/**
+ * Estimate max HR using ONLY race/hard-effort activities.
+ * More reliable than global peak because races reach near-true max.
+ * raceMaxHRs: maxHeartrate values from activities marked as race or keyword-race.
+ */
+export function estimateMaxHRFromRaces(raceMaxHRs: number[]): number | null {
+  if (raceMaxHRs.length < 2) return null;
+  const clean = raceMaxHRs.filter(h => h >= 140 && h <= 215);
+  if (clean.length === 0) return null;
+  const sorted = [...clean].sort((a, b) => a - b);
+  // Take the 90th percentile of race max HRs (not absolute max — avoids mid-race spikes)
+  const p90 = sorted[Math.min(Math.floor(sorted.length * 0.90), sorted.length - 1)];
+  return Math.round(p90);
 }
 
 /**
