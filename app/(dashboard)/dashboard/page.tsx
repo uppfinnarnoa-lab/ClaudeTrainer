@@ -6,7 +6,6 @@ import { prisma } from "@/lib/db/prisma";
 import { startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
 import { generateInsights } from "@/lib/fitness/insights";
 import { formatDuration } from "@/lib/utils";
-import { buildLoadCurve, computeTSS, computeACWR } from "@/lib/fitness/training-load";
 import { format } from "date-fns";
 
 function localDateStr(d: Date): string {
@@ -45,7 +44,6 @@ export default async function DashboardPage() {
     weekData, monthData, ytdData,
     runWeek, runYtd,
     prev4w,
-    recentActivities,
   ] = await Promise.all([
     prisma.activity.count({ where: { userId } }),
     prisma.stravaAccount.findUnique({ where: { userId }, select: { totalSynced: true, lastSyncAt: true } }),
@@ -56,25 +54,15 @@ export default async function DashboardPage() {
     aggSince(userId, weekStart,  "run"),
     aggSince(userId, yearStart,  "run"),
     aggSince(userId, fourWeeksAgo),
-    prisma.activity.findMany({
-      where: { userId, startDate: { gte: subDays(now, 365) } },
-      select: { movingTime: true, averageHeartrate: true, maxHeartrate: true, startDate: true },
-      orderBy: { startDate: "asc" },
-    }),
   ]);
 
-  // Compute ATL/CTL/TSB for insights
-  const maxHR  = fitnessCache?.maxHR  ?? 190;
-  const restHR = fitnessCache?.restHR ?? 50;
-  const tssMap = new Map<string, number>();
-  for (const a of recentActivities) {
-    const key = format(a.startDate, "yyyy-MM-dd");
-    const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR, restHR });
-    tssMap.set(key, (tssMap.get(key) ?? 0) + tss);
-  }
-  const loadCurve = buildLoadCurve(tssMap, subDays(now, 42), now);
-  const todayLoad = loadCurve.at(-1) ?? { ctl: 0, atl: 0, tsb: 0 };
-  const acwr = computeACWR(tssMap, now);
+  // Use FitnessCache for ATL/CTL/TSB — eliminates the 365-day activity fetch
+  const todayLoad = {
+    ctl: fitnessCache?.ctl ?? 0,
+    atl: fitnessCache?.atl ?? 0,
+    tsb: fitnessCache?.tsb ?? 0,
+  };
+  const acwr = fitnessCache?.acwr ?? null;
 
   const avgWeekKm4w = prev4w.km / 1000 / 4;
 
