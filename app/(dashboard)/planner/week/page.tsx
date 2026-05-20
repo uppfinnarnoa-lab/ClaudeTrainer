@@ -35,6 +35,8 @@ export default async function WeekDetailPage({
 
   // Aggregate stats
   const bySport: Record<string, { km: number; timeSec: number; count: number }> = {};
+  const byType:  Record<string, { km: number; timeSec: number; color: string }> = {};
+  const byIntensity: Record<string, { timeSec: number; color: string }> = {};
   let totalZones: Record<string, number> = {};
   let completed = 0, missed = 0, planned = 0;
 
@@ -44,6 +46,21 @@ export default async function WeekDetailPage({
     if (w.targetDistance) bySport[sport].km += w.targetDistance / 1000;
     if (w.targetDuration) bySport[sport].timeSec += w.targetDuration;
     bySport[sport].count++;
+
+    // By type (e.g. "Easy run", "LT", "Speedwork")
+    const typeName = w.template?.type?.name ?? null;
+    const typeKey  = typeName ?? `${sport} (no type)`;
+    const typeColor = workoutColor(sport, typeName);
+    if (!byType[typeKey]) byType[typeKey] = { km: 0, timeSec: 0, color: typeColor };
+    if (w.targetDistance) byType[typeKey].km += w.targetDistance / 1000;
+    if (w.targetDuration) byType[typeKey].timeSec += w.targetDuration;
+
+    // By intensity
+    const intensity = w.targetIntensity ?? "Unspecified";
+    const intColor = intensity === "Easy" ? "#7DD3FC" : intensity === "Moderate" ? "#2DD4BF"
+      : intensity === "Hard" ? "#F472B6" : intensity === "Race" ? "#FBBF24" : "#94A3B8";
+    if (!byIntensity[intensity]) byIntensity[intensity] = { timeSec: 0, color: intColor };
+    if (w.targetDuration) byIntensity[intensity].timeSec += w.targetDuration;
 
     const zoneDist = w.template?.estimatedZoneDistribution as Record<string, number> | null;
     if (zoneDist) {
@@ -119,6 +136,65 @@ export default async function WeekDetailPage({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Volume by type */}
+      {Object.keys(byType).length > 1 && (
+        <div className="rounded-xl bg-surface border border-border p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-primary">Volume by type</h2>
+          {Object.entries(byType)
+            .sort((a, b) => b[1].timeSec - a[1].timeSec)
+            .map(([type, d]) => {
+              const maxSec = Math.max(...Object.values(byType).map(x => x.timeSec), 1);
+              return (
+                <div key={type} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                      <span className="font-medium text-primary">{type}</span>
+                    </div>
+                    <span className="font-mono text-muted text-xs">
+                      {d.km > 0 ? `${d.km.toFixed(1)} km · ` : ""}
+                      {formatDuration(d.timeSec)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${(d.timeSec / maxSec) * 100}%`, backgroundColor: d.color }} />
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
+
+      {/* Volume by intensity */}
+      {Object.keys(byIntensity).length > 1 && (
+        <div className="rounded-xl bg-surface border border-border p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-primary">Volume by intensity</h2>
+          {(() => {
+            const totalIntSec = Object.values(byIntensity).reduce((s, v) => s + v.timeSec, 0);
+            const maxSec = Math.max(...Object.values(byIntensity).map(x => x.timeSec), 1);
+            return Object.entries(byIntensity)
+              .sort((a, b) => b[1].timeSec - a[1].timeSec)
+              .map(([intensity, d]) => {
+                const pct = totalIntSec > 0 ? Math.round((d.timeSec / totalIntSec) * 100) : 0;
+                return (
+                  <div key={intensity} className="space-y-1">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="font-medium text-primary">{intensity}</span>
+                      </div>
+                      <span className="font-mono text-muted text-xs">{pct}% · {formatDuration(d.timeSec)}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${(d.timeSec / maxSec) * 100}%`, backgroundColor: d.color }} />
+                    </div>
+                  </div>
+                );
+              });
+          })()}
         </div>
       )}
 

@@ -107,7 +107,7 @@ export function StatsClient(props: Props) {
                   className={cn("px-3 py-1 rounded-md transition-colors",
                     sportMode === m ? "bg-accent/10 text-accent" : "text-muted hover:text-primary"
                   )}>
-                  {m === "all" ? "Alla idrotter" : "Löpning"}
+                  {m === "all" ? "All sports" : "Running"}
                 </button>
               ))}
             </div>

@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { TrendingUp, AlertTriangle, BarChart3, Footprints } from "lucide-react";
 import { SyncButton } from "./sync-button";
+import { DashboardCards } from "./dashboard-cards";
 import { prisma } from "@/lib/db/prisma";
 import { startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
 import { generateInsights } from "@/lib/fitness/insights";
@@ -42,7 +43,7 @@ export default async function DashboardPage() {
   const [
     activityCount, stravaAccount, fitnessCache,
     weekData, monthData, ytdData,
-    runWeek, runYtd,
+    runWeek, runMonth, runYtd,
     prev4w,
   ] = await Promise.all([
     prisma.activity.count({ where: { userId } }),
@@ -52,6 +53,7 @@ export default async function DashboardPage() {
     aggSince(userId, monthStart),
     aggSince(userId, yearStart),
     aggSince(userId, weekStart,  "run"),
+    aggSince(userId, monthStart, "run"),
     aggSince(userId, yearStart,  "run"),
     aggSince(userId, fourWeeksAgo),
   ]);
@@ -95,32 +97,24 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {/* This week */}
-        <StatCard label="This week" primary={hasActivities ? formatKm(weekData.km) : "—"}
-          sub={hasActivities ? `${formatDuration(weekData.sec)} · ${weekData.count} sessions` : "No activities yet"}
-          detail={hasRun && runWeek.km > 0 ? `Run: ${formatKm(runWeek.km)}` : undefined} />
-
-        {/* This month */}
-        <StatCard label="This month" primary={hasActivities ? formatKm(monthData.km) : "—"}
-          sub={hasActivities ? formatDuration(monthData.sec) : "Sync Strava to see data"} />
-
-        {/* YTD total */}
-        <StatCard label="Year to date" primary={hasActivities ? formatKm(ytdData.km) : "—"}
-          sub={hasActivities ? formatDuration(ytdData.sec) : "Sync Strava to see data"}
-          detail={hasRun ? `Run: ${formatKm(runYtd.km)} · ${formatDuration(runYtd.sec)}` : undefined}
-          accent />
-
-        {/* Fitness */}
-        <StatCard
-          label={fitnessCache ? "Fitness (CTL)" : "Activities synced"}
-          primary={fitnessCache ? todayLoad.ctl.toFixed(0) : activityCount.toLocaleString()}
-          sub={fitnessCache
-            ? `TSB ${todayLoad.tsb > 0 ? "+" : ""}${todayLoad.tsb.toFixed(0)} · VO2max ${fitnessCache.vo2max.toFixed(1)}`
-            : stravaAccount ? `${stravaAccount.totalSynced.toLocaleString()} total` : "Connect Strava"}
-        />
-      </div>
+      {/* Stats grid with All sports / Running toggle */}
+      <DashboardCards
+        all={{
+          week:  { km: weekData.km / 1000,  sec: weekData.sec,  count: weekData.count },
+          month: { km: monthData.km / 1000, sec: monthData.sec, count: monthData.count },
+          ytd:   { km: ytdData.km / 1000,   sec: ytdData.sec,   count: ytdData.count },
+        }}
+        run={{
+          week:  { km: runWeek.km / 1000,  sec: runWeek.sec,  count: runWeek.count },
+          month: { km: runMonth.km / 1000, sec: runMonth.sec, count: runMonth.count },
+          ytd:   { km: runYtd.km / 1000,   sec: runYtd.sec,   count: runYtd.count },
+        }}
+        fitnessLabel={fitnessCache ? "Fitness (CTL)" : "Activities synced"}
+        fitnessPrimary={fitnessCache ? todayLoad.ctl.toFixed(0) : activityCount.toLocaleString()}
+        fitnessSub={fitnessCache
+          ? `TSB ${todayLoad.tsb > 0 ? "+" : ""}${todayLoad.tsb.toFixed(0)} · VO2max ${fitnessCache.vo2max.toFixed(1)}`
+          : stravaAccount ? `${stravaAccount.totalSynced.toLocaleString()} total` : "Connect Strava"}
+      />
 
       {/* ACWR load gauge */}
       {acwr !== null && (
