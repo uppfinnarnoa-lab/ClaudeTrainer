@@ -132,23 +132,37 @@ export class GeminiClient implements AIClient {
     messages: AIMessage[],
     recentContext: string,
   ): AsyncIterable<StreamChunk> {
-    const model = this.genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: systemPrompt,
-    });
+    // gemini-2.5-flash is preferred but experiences 503 spikes — fall back to 1.5-flash
+    const MODELS = ["gemini-2.5-flash", "gemini-1.5-flash"];
+    let model = this.genAI.getGenerativeModel({ model: MODELS[0], systemInstruction: systemPrompt });
 
     const history = messages.slice(0, -1).map(m => ({
       role: m.role === "assistant" ? "model" : "user",
       parts: [{ text: m.content }],
     }));
 
-    const chat = model.startChat({ history });
     const lastUser = messages.at(-1);
     const userText = lastUser
       ? (recentContext ? `[Recent training data]\n${recentContext}\n\n---\n\n${lastUser.content}` : lastUser.content)
       : "";
 
-    const result = await chat.sendMessageStream(userText);
+    // Retry with fallback model on 503 capacity spikes
+    let result;
+    for (let attempt = 0; attempt < MODELS.length; attempt++) {
+      try {
+        if (attempt > 0) model = this.genAI.getGenerativeModel({ model: MODELS[attempt], systemInstruction: systemPrompt });
+        result = await model.startChat({ history }).sendMessageStream(userText);
+        break;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (attempt < MODELS.length - 1 && (msg.includes("503") || msg.includes("overloaded") || msg.includes("unavailable"))) {
+          console.warn(`[gemini] ${MODELS[attempt]} 503 — retrying with ${MODELS[attempt + 1]}`);
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (!result) throw new Error("All Gemini models unavailable");
 
     for await (const chunk of result.stream) {
       const text = chunk.text();
