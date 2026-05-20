@@ -14,6 +14,17 @@ Personal AI-powered training platform. Connects Strava activity data + Garmin ph
 1. `git pull` before touching anything
 2. Read the docs files relevant to your task (see below)
 
+## Starting the dev server
+Always start the dev server with the Bash tool using `run_in_background: true`:
+```
+cd "c:\Users\uppfi\Desktop\TrainingLab" && pnpm dev
+```
+If port 3000 is blocked, kill the blocking process first with PowerShell:
+```powershell
+Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force
+```
+Then start pnpm dev again. Never start multiple dev servers — always kill all node processes first.
+
 ## Session End — Always
 1. Run `pnpm build --no-lint` to verify the build compiles without errors before pushing
 2. Stage changed files by name, commit, and push
