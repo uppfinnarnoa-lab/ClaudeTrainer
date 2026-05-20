@@ -193,13 +193,14 @@ export async function updateVO2maxAndPaces(userId: string) {
 
 // ── MANUAL path: HR zones (button press only) ─────────────────────────────
 export async function updateHRZones(userId: string) {
-  const [profile, activities, garminRecent] = await Promise.all([
+  const [profile, activities, garminRecent, existingCacheForZones] = await Promise.all([
     prisma.athleteProfile.findUnique({ where: { userId } }),
     loadActivities(userId),
     prisma.garminDailySummary.findMany({
       where: { userId, date: { gte: subDays(new Date(), 7) } },
       orderBy: { date: "asc" }, select: { restingHR: true },
     }),
+    prisma.fitnessCache.findUnique({ where: { userId }, select: { restHR: true } }),
   ]);
 
   const maxHRs = (activities as Act[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
@@ -234,12 +235,20 @@ export async function updateHRZones(userId: string) {
     ? hardRunClean[Math.floor(hardRunClean.length * 0.85)]  // 85th pct of clean hard-run maxHRs
     : null;
 
-  const maxHR = profile?.maxHeartRate
+  // Priority for BUTTON-PRESS estimation:
+  // 1. profile.maxHeartRate — ONLY if user MANUALLY entered it in Settings
+  //    (We track this by never writing to profile from this function)
+  // 2. Estimate from data — races, statistical, threshold, percentile
+  // restHR: profile (manual) > Garmin sensor > previous cache value > 50
+  const maxHR = profile?.maxHeartRate    // manual override wins always
     ?? estimateMaxHRFromRaces(raceMaxHRs)
     ?? statisticalMax
     ?? estimateMaxHRFromThreshold(thresholdHRs)
     ?? estimateMaxHR(maxHRs);
-  const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? 50;
+  const restHR = profile?.restingHeartRate   // manual override wins
+    ?? garminRecent.at(-1)?.restingHR
+    ?? existingCacheForZones?.restHR          // previous calibration (not from profile!)
+    ?? 50;
 
   const racePBs = await loadRacePBs(userId);
 
@@ -342,17 +351,10 @@ export async function updateHRZones(userId: string) {
     },
   });
 
-  // Only persist to AthleteProfile if the user hasn't manually set these values.
-  // Manually entered values always trump computed estimates.
-  await prisma.athleteProfile.upsert({
-    where: { userId },
-    create: { userId, maxHeartRate: maxHR, restingHeartRate: restHR },
-    update: {
-      // Only overwrite if profile value was null/unset (i.e., came from estimation, not user input)
-      ...(profile?.maxHeartRate    ? {} : { maxHeartRate: maxHR }),
-      ...(profile?.restingHeartRate ? {} : { restingHeartRate: restHR }),
-    },
-  });
+  // IMPORTANT: We do NOT write to AthleteProfile here.
+  // AthleteProfile.maxHeartRate and restingHeartRate are ONLY set by the user in Settings.
+  // Writing here would lock in a stale estimate that prevents future recalibration.
+  // The calibration result is stored exclusively in FitnessCache.
 
   return { maxHR, restHR, thresholdHR, zones: zonesJson, vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot };
 }

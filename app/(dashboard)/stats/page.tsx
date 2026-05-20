@@ -262,7 +262,9 @@ export default async function StatsPage() {
   const thresholdHRs = (activities as A[])
     .filter(a => a.averageHeartrate && a.averageHeartrate > observedMax * 0.82 && a.sportType.toLowerCase().includes("run"))
     .map(a => a.averageHeartrate!);
+  // Priority: user-manual (profile) > calibration result (cache) > estimate from data
   const computedMaxHR = profile?.maxHeartRate
+    ?? fitnessCache?.maxHR          // result of last "Estimera zoner" button press
     ?? estimateMaxHRFromRaces(raceMaxHRs)
     ?? estimateMaxHRFromThreshold(thresholdHRs)
     ?? estimateMaxHR(maxHRs);
