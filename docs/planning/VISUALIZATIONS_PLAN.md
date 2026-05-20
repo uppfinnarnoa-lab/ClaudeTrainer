@@ -361,15 +361,32 @@ Returnerar alla fält som är relevanta för coaching-analys:
 ```
 
 **Inkluderade fält per aktivitet:**
-- Datum + veckodag + namn + sporttyp
-- Distans, tid, snittempo
-- Genomsnittlig och maximal puls
-- Höjdmeter, vädertemperatur
-- Fullständig beskrivning (obegränsad längd — detta är nyckelvärdet)
-- isRace-flagga om tävling
+- Datum + veckodag + namn + sporttyp + isRace-flagga
+- Distans, tid, snittempo, max-tempo
+- Genomsnittlig och maximal puls, HR-zontid (Z1-Z5 i minuter om tillgänglig)
+- Kadens (om tillgänglig)
+- Splits per km: tempo + HR per km (från splitsMetric om tillgänglig, annars utelämnas)
+- Höjdmeter, GAP-estimat (grade-adjusted pace om lutning > 2%)
+- Vädertemperatur + vindhastighet
+- Fullständig beskrivning (obegränsad längd — nyckelvärdet för AI-coaching)
+- Suffer score / perceived exertion om tillgänglig
+
+**Utökat format med tempo + HR-detaljer:**
+```
+[2025-06-17 Wed] Tisdagsbana 5×4min — Run 🏆RACE
+  Distans: 8.1 km · Tid: 42:00 · Snittempo: 5:11/km · Maxtemp: 3:28/km
+  HR: avg 162 bpm / max 171 bpm / viloHR-reserv 72%
+  Kadens: avg 178 spm
+  Zontid: Z1 8min · Z2 5min · Z3 12min · Z4 15min · Z5 2min
+  Splits: km1 5:22/154bpm · km2 5:05/161bpm · km3 4:58/165bpm · km4 5:19/160bpm
+          km5 5:08/163bpm · km6 5:02/166bpm · km7 4:55/168bpm · km8 5:07/162bpm
+  Höjd: 42 m · GAP: 5:08/km · Väder: 21°C 8km/h vind
+  Suffer: 87 · RPE: 7/10
+  Beskrivning: "Intervallerna gick bra, höll 3:30 på de fyra sista. Lite kramp i vaden."
+```
 
 **Exkluderade fält** (sparar tokens utan coaching-värde):
-- GPS-polyline, splits-JSON, Strava-ID, tekniska metadata
+- GPS-polyline, raw JSON-blobs, Strava-ID, interna timestamps
 
 ### Exempel på korrekt AI-beteende
 **Användare:** "Analysera alla mina pass från maj 2025"  
