@@ -133,7 +133,7 @@ export class GeminiClient implements AIClient {
     recentContext: string,
   ): AsyncIterable<StreamChunk> {
     const model = this.genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.0-flash-001",
       systemInstruction: systemPrompt,
     });
 

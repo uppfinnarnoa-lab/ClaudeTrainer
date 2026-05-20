@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2, Edit2, Trash2, ExternalLink, Trophy, Link2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceDot } from "recharts";
@@ -333,6 +333,8 @@ function RaceModal({ record, onClose, onSave }: {
   const [nearActivities, setNearActivities] = useState<NearActivity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => { fetchNearActivities(date); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function fetchNearActivities(d: string) {
     if (!d) return;

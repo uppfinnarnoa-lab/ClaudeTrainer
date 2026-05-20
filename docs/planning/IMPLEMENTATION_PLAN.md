@@ -1563,6 +1563,24 @@ GOOGLE_AI_API_KEY=""
 - `PlannerCalendar.tsx`: blockForDate O(days×blocks) per render → memoized to O(1) with Map
 - `import-training-plan.ts`: `seenWeek52` / `crossedWeek52` naming inconsistency → unified to `crossedWeek52`
 
+**Third audit fixes (from MASTER_PLAN.md + interval-vo2max-research.md):**
+- `dashboard/page.tsx` BUG-06: TSS date was always `new Date()` → now uses `a.startDate`
+- `context-builder.ts` BUG-08: `estimateVO2max()` now receives `name`, `startDate`, and `racePBs`
+- `stats/page.tsx` BUG-09: activity window extended from 730 to 5×365 days
+- `cache.ts`: `updateHRZones()` now uses `estimateMaxHRFromRaces()` with same priority as stats page
+- `races/route.ts`: removed `PUT` (auto-import from Strava) — manual-only flow
+- `races-client.tsx`: Edit modal added per row, activity linking (±3 days), no import button
+- `api/races/[id]/route.ts`: `PATCH` endpoint added for editing existing records
+- `api/races/activities-near/route.ts`: new endpoint — returns activities within ±3 days of a date
+- `api/coach/calibrate/route.ts` BUG-03: AI mode now returns structured JSON zone boundaries and applies them to cache
+- `splits-chart.tsx` 6D: avg-pace line height correctly computed from dynamic scale (`scaleMax - avgSecPerKm`) / scaleRange
+- `vo2max.ts`: added Model 6 — Critical Speed (CS) from race PBs via linear regression; weight 0.15 when PBs present
+- `vo2max.ts`: training-run conservative factor changed from 0.96 → 0.98 (less aggressive penalty)
+- `cache.ts` Issue 2: HR-pace regression runs now include exponential recency weights (180-day half-life)
+- `zones.ts`: `estimateLTFromRaces()` — data-driven LT1/LT2 from race PBs + HR-pace regression; used in `updateHRZones()`
+- `zones.ts`: `buildHRZonesFromLT()` — non-uniform zone boundaries anchored to LT1/LT2
+- `context-builder.ts`: race PBs now included in AI coach system prompt
+
 ### Documentation Written
 - `docs/api/auth.md` — auth + settings endpoints
 - `docs/api/strava.md` — sync endpoint
@@ -1663,4 +1681,4 @@ Every internal API endpoint and cross-module function that crosses a boundary (H
 
 ---
 
-*Last updated: 2026-05-19*
+*Last updated: 2026-05-20*

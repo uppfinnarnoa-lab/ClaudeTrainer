@@ -50,20 +50,20 @@ Create a race record manually.
 
 ---
 
-## PUT /api/races
+## GET /api/races/activities-near?date=YYYY-MM-DD
 
-Auto-import race activities from Strava. Matches activities with `isRace: true` and `sportType` in [Run, TrailRun, VirtualRun] against standard distances (±5% tolerance).
+Find running activities within ±3 days of a date for activity linking.
 
 **Auth:** Required
 
-**Response (200):**
+**Response (200):** Array of nearby activities.
 ```json
-{ "imported": 3 }
+[
+  { "stravaId": "12345", "name": "Tisdagsbana", "date": "2025-09-14", "distanceKm": 10.2, "movingTime": 2580 }
+]
 ```
 
-**Side effects:** Creates `RaceRecord` rows for Strava race activities not already imported. Skips if `stravaActivityId` already exists in records.
-
-**Distance matching:** 800m, 1500m, Mile, 3K, 5K, 10K, 15K, Half Marathon, Marathon (±5%). Others stored as `Xkm` custom label.
+**Filtering:** Only `Run`, `TrailRun`, `VirtualRun` sport types. Max 10 results.
 
 ---
 
