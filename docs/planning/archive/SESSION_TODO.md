@@ -1,6 +1,11 @@
-# Session Implementation Plan
+# Session Implementation Plan — ARKIVERAD 2026-05-21
 
-> Written before coding to avoid missing anything.
+> **Status:** Arkiverad. Kvarvarande punkter överförda till VISUALIZATIONS_PLAN.md §10.
+>
+> ✅ = Klart | ❌ = Ej gjort (se VISUALIZATIONS_PLAN.md)
+>
+> **Klart:** 1 (polarisation 5 zoner), 2a (fast path analytics), 3 (Strava sync), 4 (maxHR bucket), 5 (build/push)  
+> **Ej gjort:** 2b — YoY volym, PR-progression per år, tid-på-dag-analys, vilopuls-trend
 
 ## 1. Polarisation bar — fix colors + show 5 zones
 
