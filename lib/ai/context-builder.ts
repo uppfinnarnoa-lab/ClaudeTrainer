@@ -188,6 +188,27 @@ export async function buildCoachContext(userId: string): Promise<CoachContext> {
     restHR,
     paces,
     hrZones: hrZoneRanges,
+    racePBs: racePBs
+      .sort((a, b) => a.distanceM - b.distanceM)
+      .slice(0, 10)
+      .map(pb => {
+        const mm = Math.floor(pb.timeSec / 60);
+        const ss = pb.timeSec % 60;
+        // Find the label from distanceM
+        const distLabel = pb.distanceM >= 42000 ? "Marathon"
+          : pb.distanceM >= 20000 ? "Half Marathon"
+          : pb.distanceM >= 9500  ? "10K"
+          : pb.distanceM >= 4800  ? "5K"
+          : pb.distanceM >= 2800  ? "3K"
+          : pb.distanceM >= 1400  ? "1500m"
+          : pb.distanceM >= 750   ? "800m"
+          : `${(pb.distanceM / 1000).toFixed(1)}K`;
+        return {
+          distance: distLabel,
+          time: `${mm}:${String(ss).padStart(2, "0")}`,
+          year: pb.date.getFullYear(),
+        };
+      }),
     healthLog: healthLines.join("\n"),
     upcomingRaces: (upcomingRaceWorkouts as { date: Date; name: string; sportType: string; targetIntensity: string | null }[]).map(w => ({
       date: format(w.date, "d MMM yyyy"),

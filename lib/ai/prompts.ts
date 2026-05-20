@@ -20,6 +20,9 @@ Max HR: ${ctx.maxHR} bpm · Resting HR: ${ctx.restHR} bpm
 ## Training paces (from VDOT)
 Easy: ${ctx.paces.easy} · Marathon: ${ctx.paces.marathon} · Threshold: ${ctx.paces.threshold} · Interval: ${ctx.paces.interval}
 
+## Race personal bests
+${ctx.racePBs.length > 0 ? ctx.racePBs.map(r => `${r.distance}: ${r.time} (${r.year})`).join(" · ") : "No race PBs logged yet"}
+
 ## HR zones
 Z1 Recovery: <${ctx.hrZones[0][1]} bpm
 Z2 Aerobic: ${ctx.hrZones[1][0]}–${ctx.hrZones[1][1]} bpm
@@ -65,6 +68,7 @@ export interface CoachContext {
   restHR: number;
   paces: { easy: string; marathon: string; threshold: string; interval: string };
   hrZones: [number, number][];
+  racePBs: { distance: string; time: string; year: number }[];
   healthLog: string;
   upcomingRaces: { date: string; name: string; distance: string; priority: string }[];
   upcomingPlan: string[];

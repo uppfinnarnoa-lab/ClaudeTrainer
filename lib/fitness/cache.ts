@@ -19,6 +19,7 @@ type Act = {
   sportType: string; name: string; distance: number; movingTime: number;
   averageHeartrate: number | null; maxHeartrate: number | null;
   averageSpeed: number | null; isRace: boolean; bestEfforts: unknown;
+  startDate: Date;
 };
 
 async function loadActivities(userId: string) {
@@ -27,7 +28,7 @@ async function loadActivities(userId: string) {
     select: {
       sportType: true, name: true, distance: true, movingTime: true,
       averageHeartrate: true, maxHeartrate: true,
-      averageSpeed: true, isRace: true, bestEfforts: true,
+      averageSpeed: true, isRace: true, bestEfforts: true, startDate: true,
     },
   });
 }
@@ -137,14 +138,19 @@ export async function updateHRZones(userId: string) {
   const racePBs = await loadRacePBs(userId);
 
   // Build HR-pace regression params for pace→HR conversion in LT estimation
+  // Use recency weights (180-day half-life) so recent fitness dominates
   const regressionRuns = (activities as Act[])
     .filter(a => a.averageHeartrate && a.distance >= 3000 && a.movingTime > 0
       && /run|trail/i.test(a.sportType)
       && !/intervall|interval|fartlek|tisdagsbana|bana\b/i.test(a.name ?? ""))
-    .map(a => ({
-      avgHR: a.averageHeartrate!,
-      avgPaceSecPerKm: a.movingTime / (a.distance / 1000),
-    }));
+    .map(a => {
+      const daysAgo = (Date.now() - new Date(a.startDate).getTime()) / (1000 * 60 * 60 * 24);
+      return {
+        avgHR: a.averageHeartrate!,
+        avgPaceSecPerKm: a.movingTime / (a.distance / 1000),
+        weight: Math.exp(-daysAgo / 180),
+      };
+    });
   const regression = buildHRPaceRegressionParams(regressionRuns, maxHR);
 
   // Estimate LT1/LT2 from race PBs + regression for data-driven zones

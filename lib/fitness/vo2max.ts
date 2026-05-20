@@ -1,17 +1,17 @@
 /**
  * Multi-model VO2max estimation.
  *
- * Models used (weighted mean):
- *   1. Daniels VDOT          — from best quality-session pace segments (weight 0.50)
- *   2. Uth-Sørensen (2003)   — 15 × (HRmax/HRrest)                    (weight 0.15)
- *   3. Cooper (1968)         — 15.3 × (HRmax/HRrest)                   (weight 0.10)
- *   4. HR-pace regression    — Firstbeat-style slope extrapolation      (weight 0.20)
- *   5. Fitness decay bridge  — last known VDOT × decay factor           (weight 0.05)
+ * Models (with race PBs present / without):
+ *   1. Daniels VDOT          — per-distance VDOT from race PBs/quality runs  (0.55 / 0.00)
+ *   2. Critical Speed         — linear regression across race PB distances     (0.15 / 0.00)
+ *   3. HR-pace regression     — Firstbeat-style slope, recency-weighted        (0.15–0.22 / 0.35–0.45)
+ *   4. Uth-Sørensen (2003)   — 15 × (HRmax/HRrest)                           (0.05 / 0.10)
+ *   5. Cooper (1968)          — 15.3 × (HRmax/HRrest)                         (0.03 / 0.07)
+ *   6. Fitness decay bridge   — last known VDOT × decay factor                 (0.02 / 0.05)
  *
  * Key rule: easy runs NEVER lower the estimate.
- *   Only quality sessions (pace > easy threshold, or isRace) are used for VDOT.
- *   Easy runs only contribute to HR-based methods.
- *   Fitness decay is applied when no quality data exists recently.
+ *   Interval sessions excluded from HR-pace regression (avg pace diluted by warm-up).
+ *   Fitness decay applied when no quality session in last 14+ days.
  */
 
 export interface VO2maxEstimate {
@@ -140,6 +140,40 @@ export function buildHRPaceRegressionParams(
   const slope = (sumW * sumWHRVO2 - sumWHR * sumWVO2) / denom;
   const intercept = (sumWVO2 - slope * sumWHR) / sumW;
   return { slope, intercept };
+}
+
+/**
+ * Critical Speed (CS) model — linear regression of distance vs time across PBs.
+ * CS ≈ LT2 pace (the highest sustainable aerobic speed).
+ * vVO2max ≈ CS × 1.04.
+ * Requires ≥2 PBs; best with 3+ across a range of distances (3-30 min duration).
+ */
+export function criticalSpeedFromPBs(
+  pbs: Array<{ distanceM: number; timeSec: number }>,
+): { vdot: number; csPaceSecPerKm: number } | null {
+  const valid = pbs.filter(p => p.timeSec >= 120 && p.timeSec <= 2400 && p.distanceM >= 800);
+  if (valid.length < 2) return null;
+
+  // Linear regression: distanceM = CS * timeSec + D'
+  const n = valid.length;
+  const sumT  = valid.reduce((s, p) => s + p.timeSec, 0);
+  const sumD  = valid.reduce((s, p) => s + p.distanceM, 0);
+  const sumT2 = valid.reduce((s, p) => s + p.timeSec * p.timeSec, 0);
+  const sumTD = valid.reduce((s, p) => s + p.timeSec * p.distanceM, 0);
+  const denom = n * sumT2 - sumT * sumT;
+  if (Math.abs(denom) < 1e-6) return null;
+
+  const csMs = (n * sumTD - sumT * sumD) / denom; // m/s
+  if (csMs <= 0 || csMs > 10) return null; // sanity: 0–36 km/h
+
+  // vVO2max is ~4% faster than CS (CS ≈ LT2 pace)
+  const vVO2maxMs = csMs * 1.04;
+  const vVO2maxPaceSecPerKm = 1000 / vVO2maxMs;
+  // Use a representative ~3K duration at vVO2max to get VDOT
+  const approxTimeSec = 3000 / vVO2maxMs;
+  const vdot = vdotFromRace(3000, approxTimeSec);
+
+  return { vdot, csPaceSecPerKm: Math.round(1000 / csMs) };
 }
 
 /** Submaximal effort extrapolation (Åstrand-Ryhming adapted for running) */
@@ -315,7 +349,9 @@ export function estimateVO2max(
     ];
     for (const b of BUCKETS) {
       if (!nearDistance(a.distanceM, b.m)) continue;
-      const factor = isRaceSession ? 1 : (b.m < 8000 ? 0.96 : 0.99);
+      // For non-race sessions, apply a small conservative factor (2%) since training
+      // is not fully maximal. Division inflates time → slightly lower VDOT.
+      const factor = isRaceSession ? 1 : (b.m < 8000 ? 0.98 : 0.99);
       const v = vdotFromRace(b.m, a.timeSec / factor);
       if (v > 35 && v < 90) candidates.push({ v, weight: w * (isRaceSession ? 1.1 : 0.85), source: isRaceSession ? "race" : "quality-run" });
     }
@@ -390,16 +426,26 @@ export function estimateVO2max(
     model5Vdot = applyFitnessDecay(model1Vdot, daysSinceQuality, hasRecentEasy);
   }
 
+  // ── MODEL 6: Critical Speed from race PBs ────────────────────────────────
+  let model6Vdot: number | null = null;
+  if (racePBs && racePBs.length >= 2) {
+    const cs = criticalSpeedFromPBs(racePBs);
+    if (cs && cs.vdot > 35 && cs.vdot < 90) model6Vdot = cs.vdot;
+  }
+
   // ── WEIGHTED MEAN — race PBs dominate when present ───────────────────────
-  const hasRacePBs = racePBCandidates.length > 0;
-  const vdotWeight = hasRacePBs ? 0.70 : 0.45;
+  const hasRacePBs = racePBCandidates.length > 0 || model6Vdot !== null;
+  const vdotWeight = hasRacePBs ? 0.55 : 0.00;
+  const csWeight   = model6Vdot !== null ? 0.15 : 0.00;
+  const regrWeight = hasRacePBs ? Math.min(model4Weight, 0.22) : model4Weight;
   type ModelEntry = [number | null, number, string];
   const models: ModelEntry[] = [
-    [model1Vdot,  vdotWeight,   "VDOT (pace)"],
-    [model4,      model4Weight, "HR-pace regression"],
-    [model2,      0.08,         "Uth-Sørensen"],
-    [model3,      0.05,         "Cooper"],
-    [model5Vdot,  0.04,         "decay bridge"],
+    [model1Vdot,  vdotWeight, "VDOT (pace)"],
+    [model6Vdot,  csWeight,   "Critical Speed"],
+    [model4,      regrWeight, "HR-pace regression"],
+    [model2,      hasRacePBs ? 0.05 : 0.10, "Uth-Sørensen"],
+    [model3,      hasRacePBs ? 0.03 : 0.07, "Cooper"],
+    [model5Vdot,  hasRacePBs ? 0.02 : 0.05, "decay bridge"],
   ];
 
   const available = models.filter(([v]) => v !== null && v > 35 && v < 90);
