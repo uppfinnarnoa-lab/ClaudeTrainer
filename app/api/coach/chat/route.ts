@@ -142,13 +142,16 @@ export async function POST(req: NextRequest) {
 
         // Update monthly spend for the correct provider
         if (cost > 0) {
-          const spendField = provider === "gemini"
+          const updateField = provider === "gemini"
             ? { geminiCurrentMonthSpendUsd: { increment: cost } }
             : { currentMonthSpendUsd: { increment: cost } };
+          const createField = provider === "gemini"
+            ? { geminiCurrentMonthSpendUsd: cost }
+            : { currentMonthSpendUsd: cost };
           await prisma.aISettings.upsert({
             where: { userId },
-            create: { userId, ...spendField },
-            update: spendField,
+            create: { userId, ...createField },
+            update: updateField,
           });
         }
 
