@@ -34,7 +34,7 @@ export function WorkoutPill({ workout, isPast, onClick }: Props) {
     >
       {/* Left border — workout TYPE colour */}
       <div
-        className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg"
+        className="absolute left-0 top-0 bottom-0 w-[5px] rounded-l-lg"
         style={{ backgroundColor: typeColor }}
       />
 

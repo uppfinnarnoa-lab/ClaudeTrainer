@@ -23,7 +23,7 @@ export function TemplateCard({ template, onAddToDate, onDelete, onEdit, compact 
         "group rounded-xl bg-surface border border-border p-3 space-y-2 hover:border-accent/40 transition-colors",
         compact && "p-2 space-y-1.5"
       )}
-      style={{ borderLeftWidth: 3, borderLeftColor: color }}
+      style={{ borderLeftWidth: 5, borderLeftColor: color }}
     >
       {/* Header */}
       <div className="flex items-start gap-2">
