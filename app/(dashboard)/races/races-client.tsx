@@ -195,32 +195,40 @@ export function RacesClient({ records: initialRecords }: Props) {
               </div>
             )}
 
-            {chartData.length > 1 && (
-              <div className="rounded-xl bg-surface border border-border p-4">
-                <p className="text-xs font-medium text-muted mb-3">Tidsutveckling</p>
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="date" tickFormatter={d => format(parseISO(d), "MMM yy")} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
-                    <YAxis
-                      reversed
-                      tickFormatter={v => secToTimeStr(v)}
-                      tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "monospace" }}
-                      axisLine={false} tickLine={false} width={56}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }}
-                      formatter={(v: number) => [secToTimeStr(v), "Tid"]}
-                      labelFormatter={d => format(parseISO(d as string), "d MMM yyyy")}
-                    />
-                    <Line dataKey="seconds" stroke="var(--accent)" strokeWidth={2} dot={false} />
-                    {chartData.map((d, i) => d.isPB ? (
-                      <ReferenceDot key={i} x={d.date} y={d.seconds} r={5} fill="var(--warning)" stroke="var(--surface)" strokeWidth={2} />
-                    ) : null)}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+            {chartData.length > 1 && (() => {
+              // Tight domain: pad 15% of range on each side (min 20s)
+              const times = chartData.map(d => d.seconds);
+              const lo = Math.min(...times), hi = Math.max(...times);
+              const pad = Math.max((hi - lo) * 0.25, 20);
+              const domain: [number, number] = [Math.max(0, lo - pad), hi + pad];
+              return (
+                <div className="rounded-xl bg-surface border border-border p-4">
+                  <p className="text-xs font-medium text-muted mb-3">Tidsutveckling</p>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <LineChart data={chartData} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="date" tickFormatter={d => format(parseISO(d), "MMM yy")} tick={{ fontSize: 11, fill: "var(--text-muted)" }} axisLine={false} tickLine={false} />
+                      <YAxis
+                        reversed
+                        domain={domain}
+                        tickFormatter={v => secToTimeStr(v)}
+                        tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "monospace" }}
+                        axisLine={false} tickLine={false} width={56}
+                      />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12 }}
+                        formatter={(v: number) => [secToTimeStr(v), "Tid"]}
+                        labelFormatter={d => format(parseISO(d as string), "d MMM yyyy")}
+                      />
+                      <Line dataKey="seconds" stroke="var(--accent)" strokeWidth={2} dot={false} />
+                      {chartData.map((d, i) => d.isPB ? (
+                        <ReferenceDot key={i} x={d.date} y={d.seconds} r={5} fill="var(--warning)" stroke="var(--surface)" strokeWidth={2} />
+                      ) : null)}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
 
             {/* History table */}
             <div className="rounded-xl border border-border overflow-hidden">
