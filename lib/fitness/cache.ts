@@ -13,8 +13,8 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces } from "./zones";
-import { estimateVO2max, buildHRPaceRegressionParams, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace, type RacePB } from "./vo2max";
+import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces, estimateZonesFromStatisticalAnalysis } from "./zones";
+import { estimateVO2max, buildHRPaceRegressionParams, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace, gradeAdjustedPace, type RacePB } from "./vo2max";
 import { computeTSS, buildLoadCurve, computeACWR } from "./training-load";
 import { RACE_DISTANCES } from "./paces";
 import { subDays, format, startOfWeek } from "date-fns";
@@ -220,24 +220,55 @@ export async function updateHRZones(userId: string) {
 
   const racePBs = await loadRacePBs(userId);
 
+  // HR-pace regression — GAP-corrected, excludes intervals (whole-session avgPace is
+  // diluted by recovery jogs making interval sessions appear "high HR + slow pace",
+  // which would flatten the slope and push LT2 estimate down)
   const regressionRuns = (activities as Act[])
     .filter(a => a.averageHeartrate && a.distance >= 3000 && a.movingTime > 0
       && /run|trail/i.test(a.sportType)
       && !/intervall|interval|fartlek|tisdagsbana|bana\b/i.test(a.name ?? ""))
     .map(a => {
       const daysAgo = (Date.now() - new Date(a.startDate).getTime()) / (1000 * 60 * 60 * 24);
+      const rawPace = a.movingTime / (a.distance / 1000);
+      const gap = gradeAdjustedPace(rawPace, a.totalElevationGain ?? 0, a.distance);
       return {
         avgHR: a.averageHeartrate!,
-        avgPaceSecPerKm: a.movingTime / (a.distance / 1000),
+        avgPaceSecPerKm: gap,
         weight: Math.exp(-daysAgo / 180),
       };
     });
   const regression = buildHRPaceRegressionParams(regressionRuns, maxHR);
 
+  // ── Method 1: Race-PB based LT estimation ─────────────────────────────
   const lt = estimateLTFromRaces(racePBs, maxHR, restHR, regression);
-  const hrZones = lt.source === "race-pbs"
+  let hrZones = lt.source === "race-pbs"
     ? buildHRZonesFromLT(lt, maxHR, restHR)
     : buildHRZones(maxHR, restHR);
+
+  // ── Method 2: Statistical zone analysis from bucketed training data ───
+  // Uses all running activities, finds LT1/LT2 as deflection points in the
+  // HR-pace curve. Applied directly when R² ≥ 0.80 (high confidence).
+  const statRuns = (activities as Act[])
+    .filter(a => a.averageHeartrate && /run|trail/i.test(a.sportType)
+      && a.distance >= 4000 && a.movingTime >= 900)
+    .map(a => ({
+      avgHR: a.averageHeartrate!,
+      distanceM: a.distance,
+      movingTimeSec: a.movingTime,
+      totalElevationGain: a.totalElevationGain ?? 0,
+      startDate: a.startDate,
+    }));
+
+  const statResult = estimateZonesFromStatisticalAnalysis(statRuns, maxHR, restHR);
+
+  if (statResult && statResult.rSquared >= 0.80) {
+    // High-confidence statistical estimate — use directly (it's based on actual training data)
+    hrZones = statResult.zones;
+    console.log(`[zones] Statistical analysis applied: LT1=${statResult.lt1HR}bpm LT2=${statResult.lt2HR}bpm R²=${statResult.rSquared} (${statResult.bucketCount} buckets)`);
+  } else if (statResult) {
+    console.log(`[zones] Statistical analysis insufficient: R²=${statResult.rSquared} (${statResult.bucketCount} buckets) — using race-PB method`);
+  }
+
   const thresholdHR = Math.round((hrZones.z4[0] + hrZones.z4[1]) / 2);
   const zonesJson = { z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5 };
 
@@ -272,9 +303,6 @@ export async function updateHRZones(userId: string) {
     create: { userId, maxHeartRate: maxHR, restingHeartRate: restHR },
     update: { maxHeartRate: maxHR, restingHeartRate: restHR },
   });
-
-  // Trigger full cache update so new zones are reflected everywhere
-  await updateVO2maxAndPaces(userId);
 
   return { maxHR, restHR, thresholdHR, zones: zonesJson, vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot };
 }

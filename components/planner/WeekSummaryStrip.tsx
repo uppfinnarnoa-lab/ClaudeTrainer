@@ -52,10 +52,10 @@ export function WeekSummaryStrip({ weekStart, workouts, block, onClick, compact,
   const isPast   = workouts.some(w => w.date < today);
 
   // ── Predicted weekly run distance ─────────────────────────────────────
-  // Only compute for the current week (weekActivities are only fetched for current week)
-  const weekEnd = format(addDays(weekStart, 6), "yyyy-MM-dd");
-  const isCurrentWeek = weekRunActivities.length > 0 ||
-    (today >= format(weekStart, "yyyy-MM-dd") && today <= weekEnd);
+  // Only show for the actual current week (the week that contains today)
+  const weekStartStr = format(weekStart, "yyyy-MM-dd");
+  const weekEnd      = format(addDays(weekStart, 6), "yyyy-MM-dd");
+  const isCurrentWeek = today >= weekStartStr && today <= weekEnd;
 
   let predictedRunKm: number | null = null;
   if (isCurrentWeek) {

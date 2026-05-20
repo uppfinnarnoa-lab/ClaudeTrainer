@@ -138,38 +138,71 @@ export interface LTBoundaries {
  * Convert pace → HR via linear regression if available.
  * Falls back to % of maxHR if no regression.
  */
+/**
+ * Extrapolate a PB to 10K equivalent pace using Riegel formula.
+ * Reliability falls with extrapolation distance — PBs far from 10K are weighted lower.
+ */
+function extrapolateTo10KPaceSecPerKm(
+  pbs: Array<{ distanceM: number; timeSec: number }>,
+): number | null {
+  const usable = pbs.filter(p => p.distanceM >= 800 && p.distanceM <= 42200);
+  if (usable.length === 0) return null;
+  // Riegel: T2 = T1 × (D2/D1)^1.06
+  const candidates = usable.map(p => {
+    const t10K = p.timeSec * Math.pow(10000 / p.distanceM, 1.06);
+    const pace10K = t10K / 10; // sec/km
+    // Weight: closest distances to 10K are most reliable
+    const ratio = Math.min(p.distanceM, 10000) / Math.max(p.distanceM, 10000);
+    const w = ratio ** 2; // quadratic — falls off sharply for very short/long PBs
+    return { pace10K, w };
+  });
+  const totalW = candidates.reduce((s, c) => s + c.w, 0);
+  if (totalW < 0.01) return null;
+  return candidates.reduce((s, c) => s + c.pace10K * c.w, 0) / totalW;
+}
+
 export function estimateLTFromRaces(
   racePBs: Array<{ distanceM: number; timeSec: number }>,
   maxHR: number,
   restHR: number,
   regression?: { slope: number; intercept: number } | null,
 ): LTBoundaries {
-  // Sort PBs by distance
+  if (racePBs.length === 0) {
+    return {
+      lt1HR: Math.round(maxHR * 0.78), lt2HR: Math.round(maxHR * 0.88),
+      lt1PaceSecPerKm: 0, lt2PaceSecPerKm: 0, source: "default",
+    };
+  }
+
   const byDist = [...racePBs].sort((a, b) => a.distanceM - b.distanceM);
 
   function paceOf(distM: number): number | null {
-    // Find closest PB within ±8% of target distance
     const match = byDist.find(r => Math.abs(r.distanceM - distM) / distM < 0.08);
     return match ? match.timeSec / (match.distanceM / 1000) : null;
   }
 
-  const hmPace  = paceOf(21097);
-  const tenKPace = paceOf(10000);
+  const hmPace    = paceOf(21097);
+  const tenKPace  = paceOf(10000);
   const fiveKPace = paceOf(5000);
 
   let lt2PaceSecPerKm: number | null = null;
-  if (hmPace)     lt2PaceSecPerKm = hmPace;                  // HM pace ≈ LT2 directly
-  else if (tenKPace) lt2PaceSecPerKm = tenKPace * 1.065;     // 10K + 6.5%
-  else if (fiveKPace) lt2PaceSecPerKm = fiveKPace * 1.135;   // 5K + 13.5%
+
+  if (hmPace) {
+    lt2PaceSecPerKm = hmPace;                  // HM pace ≈ LT2 (most accurate)
+  } else if (tenKPace) {
+    lt2PaceSecPerKm = tenKPace * 1.065;        // 10K + 6.5%
+  } else if (fiveKPace) {
+    lt2PaceSecPerKm = fiveKPace * 1.135;       // 5K + 13.5%
+  } else {
+    // No standard-distance PBs — extrapolate from any available PB via Riegel to 10K equivalent
+    const extrapolated10KPace = extrapolateTo10KPaceSecPerKm(racePBs);
+    if (extrapolated10KPace) lt2PaceSecPerKm = extrapolated10KPace * 1.065;
+  }
 
   if (!lt2PaceSecPerKm) {
-    // No race data — fall back to standard % of maxHR
     return {
-      lt1HR: Math.round(maxHR * 0.78),
-      lt2HR: Math.round(maxHR * 0.88),
-      lt1PaceSecPerKm: 0,
-      lt2PaceSecPerKm: 0,
-      source: "default",
+      lt1HR: Math.round(maxHR * 0.78), lt2HR: Math.round(maxHR * 0.88),
+      lt1PaceSecPerKm: 0, lt2PaceSecPerKm: 0, source: "default",
     };
   }
 
