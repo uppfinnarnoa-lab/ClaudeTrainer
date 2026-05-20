@@ -10,6 +10,8 @@ interface ToolAction {
   name: string;
   message: string;
   success: boolean;
+  pending?: boolean;
+  pendingInput?: Record<string, unknown>;
 }
 
 interface Message {
@@ -61,63 +63,67 @@ export function ChatInterface({
 
   const spendPct = monthlyBudget > 0 ? Math.min((totalSpend / monthlyBudget) * 100, 100) : 0;
 
-  const send = useCallback(async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
+  async function approveAction(action: ToolAction) {
+    const confirmText = `Ja, genomför: ${action.message}`;
+    await sendWithPayload(confirmText, { toolName: action.name, toolInput: action.pendingInput ?? {} });
+  }
 
+  async function rejectAction() {
+    await sendWithPayload("Nej, avbryt det.");
+  }
+
+  async function sendWithPayload(text: string, approvedAction?: { toolName: string; toolInput: Record<string, unknown> }) {
+    if (streaming) return;
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text };
     setMessages(prev => [...prev, userMsg]);
-    setInput("");
     setStreaming(true);
-
     const assistantId = crypto.randomUUID();
     setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "" }]);
-
     try {
       const res = await fetch("/api/coach/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: convId, message: text }),
+        body: JSON.stringify({ conversationId: convId, message: text, ...(approvedAction ? { approvedAction } : {}) }),
       });
+      await processStream(res, assistantId);
+    } finally {
+      setStreaming(false);
+      textareaRef.current?.focus();
+    }
+  }
 
-      if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({ error: "Request failed" }));
-        let errMsg = err.error ?? "Unknown error";
-        if (err.error === "budget_exceeded")
-          errMsg = `Månadsbudget uppnådd ($${err.budget?.toFixed(2)}). Ändra i Inställningar.`;
-        else if (err.error === "no_api_key")
-          errMsg = "Ingen API-nyckel konfigurerad. Lägg till en i Inställningar → AI Coach.";
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: errMsg } : m));
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let fullContent = "";
-      let msgCost = 0;
-      let gotDone = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          let data: Record<string, unknown>;
-          try { data = JSON.parse(line.slice(6)); } catch { continue; }
-
-          if (data.convId && !convId) {
-            setConvId(data.convId as string);
-            window.history.replaceState(null, "", `/coach?conv=${data.convId}`);
-          }
-          if (data.toolCall) {
-            const tc = data.toolCall as ToolAction;
-            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, toolAction: tc } : m));
-          }
+  async function processStream(res: Response, assistantId: string) {
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({ error: "Request failed" }));
+      let errMsg = err.error ?? "Unknown error";
+      if (err.error === "budget_exceeded")
+        errMsg = `Månadsbudget uppnådd ($${err.budget?.toFixed(2)}). Ändra i Inställningar.`;
+      else if (err.error === "no_api_key")
+        errMsg = "Ingen API-nyckel konfigurerad. Lägg till en i Inställningar → AI Coach.";
+      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: errMsg } : m));
+      return;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", fullContent = "", msgCost = 0, gotDone = false;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let data: Record<string, unknown>;
+        try { data = JSON.parse(line.slice(6)); } catch { continue; }
+        if (data.convId && !convId) {
+          setConvId(data.convId as string);
+          window.history.replaceState(null, "", `/coach?conv=${data.convId}`);
+        }
+        if (data.toolCall) {
+          const tc = data.toolCall as ToolAction;
+          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, toolAction: tc } : m));
+        }
           if (data.text) {
             fullContent += data.text as string;
             setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullContent } : m));
@@ -138,18 +144,21 @@ export function ChatInterface({
         }
       }
 
-      if (!gotDone || !fullContent.trim()) {
-        setMessages(prev => prev.map(m =>
-          m.id === assistantId && !m.content
-            ? { ...m, content: "Inget svar mottaget. Kontrollera API-nyckeln och budgeten." }
-            : m
-        ));
-      }
-    } finally {
-      setStreaming(false);
-      textareaRef.current?.focus();
+    if (!gotDone || !fullContent.trim()) {
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId && !m.content
+          ? { ...m, content: "Inget svar mottaget. Kontrollera API-nyckeln och budgeten." }
+          : m
+      ));
     }
-  }, [input, streaming, convId, provider]);
+  }
+
+  const send = useCallback(async () => {
+    const text = input.trim();
+    if (!text || streaming) return;
+    setInput("");
+    await sendWithPayload(text);
+  }, [input, streaming, convId, provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleKey(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -308,7 +317,11 @@ export function ChatInterface({
               <div className={cn("max-w-[80%] space-y-1.5", msg.role === "user" ? "items-end" : "items-start")}>
                 {/* Tool action card — shown above the text response */}
                 {msg.toolAction && (
-                  <ToolActionCard action={msg.toolAction} />
+                  <ToolActionCard
+                    action={msg.toolAction}
+                    onApprove={() => approveAction(msg.toolAction!)}
+                    onReject={rejectAction}
+                  />
                 )}
                 <div className={cn(
                   "rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap",
@@ -358,14 +371,46 @@ export function ChatInterface({
   );
 }
 
-function ToolActionCard({ action }: { action: ToolAction }) {
+function ToolActionCard({ action, onApprove, onReject }: {
+  action: ToolAction;
+  onApprove?: () => void;
+  onReject?: () => void;
+}) {
   const ICONS: Record<string, React.ReactNode> = {
-    create_workout:   <CalendarPlus size={14} />,
+    create_workout:    <CalendarPlus size={14} />,
     get_upcoming_plan: <ClipboardList size={14} />,
-    delete_workout:   <Trash2 size={14} />,
-    update_profile:   <UserCog size={14} />,
+    get_fitness_summary: <ClipboardList size={14} />,
+    get_race_history:  <ClipboardList size={14} />,
+    get_readiness:     <ClipboardList size={14} />,
+    get_training_blocks: <ClipboardList size={14} />,
+    search_activities: <ClipboardList size={14} />,
+    get_activity_detail: <ClipboardList size={14} />,
+    delete_workout:    <Trash2 size={14} />,
+    update_profile:    <UserCog size={14} />,
   };
   const icon = ICONS[action.name] ?? <Bot size={14} />;
+
+  if (action.pending) {
+    return (
+      <div className="border border-warning/30 bg-warning/5 rounded-xl px-3 py-2.5 space-y-2">
+        <div className="flex items-center gap-2 text-xs text-warning">
+          <span className="shrink-0">{icon}</span>
+          <span className="font-medium">{action.message}</span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onApprove}
+            className="flex-1 py-1 rounded-lg bg-accent text-white text-xs font-semibold hover:opacity-90 transition">
+            Godkänn
+          </button>
+          <button onClick={onReject}
+            className="flex-1 py-1 rounded-lg border border-border text-xs text-muted hover:text-primary transition">
+            Avbryt
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn(
       "flex items-center gap-2 px-3 py-2 rounded-xl text-xs border",

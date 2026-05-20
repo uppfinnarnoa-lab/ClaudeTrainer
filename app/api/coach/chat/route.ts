@@ -7,13 +7,18 @@ import { buildCoachContext, buildRecentActivitiesSummary } from "@/lib/ai/contex
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { estimateCost } from "@/lib/ai/client";
 import { safeDecrypt } from "@/lib/encrypt";
-import { COACH_TOOLS, toGeminiTools, executeCoachTool } from "@/lib/ai/tools";
+import { COACH_TOOLS, toGeminiTools, executeCoachTool, WRITE_TOOLS } from "@/lib/ai/tools";
 import type { AIMessage } from "@/lib/ai/client";
 import { z } from "zod";
 
 const schema = z.object({
   conversationId: z.string().cuid().optional(),
   message: z.string().min(1).max(4000),
+  // If user approved a pending write-tool action, it's sent here for execution
+  approvedAction: z.object({
+    toolName: z.string(),
+    toolInput: z.record(z.unknown()),
+  }).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -25,7 +30,7 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return new Response("Invalid request", { status: 400 });
 
-  const { conversationId, message } = parsed.data;
+  const { conversationId, message, approvedAction } = parsed.data;
 
   // ── Load AI settings ────────────────────────────────────────────────
   const [aiSettings, user] = await Promise.all([
@@ -103,12 +108,20 @@ export async function POST(req: NextRequest) {
     data: { conversationId: convId, role: "user", content: message },
   });
 
-  // ── Phase 1: Check for tool use (non-streaming) ─────────────────────
-  // Tool use and text streaming can't coexist in one API response turn.
-  // So: first check if the AI wants to call a tool, execute it server-side,
-  // then stream the follow-up text response.
-  let toolEvent: { name: string; message: string; success: boolean } | null = null;
+  // ── Phase 1: Execute pre-approved write action (if user said "yes") ───
+  let toolEvent: { name: string; message: string; success: boolean; pending?: boolean; pendingInput?: Record<string, unknown> } | null = null;
 
+  if (approvedAction) {
+    const result = await executeCoachTool(approvedAction.toolName, approvedAction.toolInput, userId);
+    toolEvent = { name: approvedAction.toolName, message: result.message, success: result.success };
+    messages.push({ role: "assistant", content: `[Verktyg utfört: ${approvedAction.toolName}] ${result.message}` });
+    messages.push({ role: "user", content: message }); // the "ja/godkänn" message is already there
+  }
+
+  // ── Phase 2: Check for tool use (non-streaming) ──────────────────────
+  // WRITE tools require user approval — emit pendingAction event instead of executing.
+  // READ tools execute immediately (no side effects).
+  if (!approvedAction) {
   if (provider === "claude") {
     try {
       const Anthropic = (await import("@anthropic-ai/sdk")).default;
@@ -126,11 +139,17 @@ export async function POST(req: NextRequest) {
       if (toolCheck.stop_reason === "tool_use") {
         const toolUse = toolCheck.content.find(b => b.type === "tool_use") as { type: "tool_use"; name: string; input: Record<string, unknown> } | undefined;
         if (toolUse) {
-          const result = await executeCoachTool(toolUse.name, toolUse.input, userId);
-          toolEvent = { name: toolUse.name, message: result.message, success: result.success };
-          // Inject tool context into the message thread so the AI can reference what happened
-          messages.push({ role: "assistant", content: `[Tool: ${toolUse.name}] ${result.message}` });
-          messages.push({ role: "user", content: "Berätta vad du gjorde och fortsätt konversationen." });
+          if (WRITE_TOOLS.has(toolUse.name)) {
+            // Write tool — request user approval, don't execute yet
+            toolEvent = { name: toolUse.name, message: describeAction(toolUse.name, toolUse.input), success: true, pending: true, pendingInput: toolUse.input };
+            messages.push({ role: "assistant", content: `[Inväntar godkännande: ${toolUse.name}] ${toolEvent.message}` });
+          } else {
+            // Read tool — execute immediately (no side effects)
+            const result = await executeCoachTool(toolUse.name, toolUse.input, userId);
+            toolEvent = { name: toolUse.name, message: result.message, success: result.success };
+            messages.push({ role: "assistant", content: `[Tool: ${toolUse.name}]\n${result.data}` });
+            messages.push({ role: "user", content: "Analysera och svara på min fråga baserat på dessa data." });
+          }
         }
       }
     } catch { /* tool check failed — fall through to normal stream */ }
@@ -158,13 +177,19 @@ export async function POST(req: NextRequest) {
       const fcPart = result.response.candidates?.[0]?.content.parts.find(p => "functionCall" in p);
       if (fcPart && "functionCall" in fcPart && fcPart.functionCall) {
         const fc = fcPart.functionCall;
-        const toolResult = await executeCoachTool(fc.name, fc.args as Record<string, unknown>, userId);
-        toolEvent = { name: fc.name, message: toolResult.message, success: toolResult.success };
-        messages.push({ role: "assistant", content: `[Tool: ${fc.name}] ${toolResult.message}` });
-        messages.push({ role: "user", content: "Berätta vad du gjorde och fortsätt konversationen." });
+        if (WRITE_TOOLS.has(fc.name)) {
+          toolEvent = { name: fc.name, message: describeAction(fc.name, fc.args as Record<string, unknown>), success: true, pending: true, pendingInput: fc.args as Record<string, unknown> };
+          messages.push({ role: "assistant", content: `[Inväntar godkännande: ${fc.name}] ${toolEvent.message}` });
+        } else {
+          const toolResult = await executeCoachTool(fc.name, fc.args as Record<string, unknown>, userId);
+          toolEvent = { name: fc.name, message: toolResult.message, success: toolResult.success };
+          messages.push({ role: "assistant", content: `[Tool: ${fc.name}]\n${toolResult.data}` });
+          messages.push({ role: "user", content: "Analysera och svara på min fråga baserat på dessa data." });
+        }
       }
     } catch { /* tool check failed */ }
   }
+  } // end if (!approvedAction)
 
   // ── Phase 2: Stream text response ────────────────────────────────────
   const aiClient = provider === "claude"
@@ -181,9 +206,17 @@ export async function POST(req: NextRequest) {
         // Send conversationId first so client can track it
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ convId })}\n\n`));
 
-        // If a tool was called, emit the action card event before streaming text
+        // Emit tool event (completed action or pending approval request)
         if (toolEvent) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ toolCall: toolEvent })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+            toolCall: {
+              name: toolEvent.name,
+              message: toolEvent.message,
+              success: toolEvent.success,
+              pending: toolEvent.pending ?? false,
+              pendingInput: toolEvent.pendingInput ?? null,
+            }
+          })}\n\n`));
         }
 
         for await (const chunk of aiClient.stream(systemPrompt, messages, recentActivities)) {
@@ -246,4 +279,17 @@ export async function POST(req: NextRequest) {
       "Connection": "keep-alive",
     },
   });
+}
+
+function describeAction(toolName: string, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case "create_workout":
+      return `Lägg till "${input.name}" (${input.sportType}) den ${input.date}${input.targetDistanceKm ? ` · ${input.targetDistanceKm}km` : ""}${input.targetDurationMin ? ` · ${input.targetDurationMin}min` : ""}`;
+    case "delete_workout":
+      return `Radera pass med ID ${input.workoutId}`;
+    case "update_profile":
+      return `Uppdatera profil: ${Object.entries(input).map(([k, v]) => `${k}=${v}`).join(", ")}`;
+    default:
+      return `Utföra ${toolName}`;
+  }
 }

@@ -79,6 +79,35 @@ export const COACH_TOOLS = [
     },
   },
   {
+    name: "get_fitness_summary",
+    description:
+      "Get the athlete's current fitness metrics: VO2max, VDOT, CTL (fitness), ATL (fatigue), TSB (form), ACWR, HR zones, and race time predictions. Use this at the start of a coaching conversation or when the athlete asks about their fitness level.",
+    input_schema: { type: "object" as const, properties: {} },
+  },
+  {
+    name: "get_race_history",
+    description:
+      "Get all the athlete's personal bests (PBs) grouped by distance with dates. Use this when the athlete asks about their race times, PBs, or when you need to know their racing history for predictions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        distance: { type: "string", description: "Filter by distance label e.g. '5K', '10K', 'Half Marathon' (optional)" },
+      },
+    },
+  },
+  {
+    name: "get_readiness",
+    description:
+      "Get today's readiness data: HRV trend (last 7 nights), sleep quality, resting HR, Body Battery, and TSB. Use when athlete asks how they're recovering or whether to train hard today.",
+    input_schema: { type: "object" as const, properties: {} },
+  },
+  {
+    name: "get_training_blocks",
+    description:
+      "Get current and upcoming training blocks (Base/Build/Peak/Taper) with targets and progress. Use when discussing periodization, race prep, or training structure.",
+    input_schema: { type: "object" as const, properties: {} },
+  },
+  {
     name: "get_activity_detail",
     description:
       "Get full details of a specific activity including splits per km, laps, best efforts, and complete description. Use after search_activities to get the full picture of a session the athlete asks about.",
@@ -91,6 +120,9 @@ export const COACH_TOOLS = [
     },
   },
 ] as const;
+
+// Tools that modify the database — require user approval before execution
+export const WRITE_TOOLS = new Set(["create_workout", "delete_workout", "update_profile"]);
 
 // Gemini uses "functionDeclarations" with slightly different key names
 export function toGeminiTools() {
@@ -184,6 +216,100 @@ export async function executeCoachTool(
         await prisma.athleteProfile.upsert({ where: { userId }, create: { userId, ...data }, update: data });
         const parts = Object.entries(data).map(([k, v]) => `${k}=${v}`).join(", ");
         return { success: true, message: `Profil uppdaterad: ${parts}`, data: `Profile updated: ${parts}` };
+      }
+
+      case "get_fitness_summary": {
+        const fc = await prisma.fitnessCache.findUnique({
+          where: { userId },
+          select: { vo2max: true, vdot: true, confidence: true, ctl: true, atl: true, tsb: true, acwr: true, maxHR: true, restHR: true, zones: true, predictionsJson: true, computedAt: true },
+        });
+        if (!fc) return { success: true, message: "Fitness summary", data: "No fitness data cached yet. Sync Strava to generate." };
+        type Pred = { label: string; peak: number };
+        const preds = fc.predictionsJson as Pred[] | null;
+        const predStr = preds ? preds.slice(0, 5).map(p => `  ${p.label}: ${Math.floor(p.peak/60)}:${String(p.peak%60).padStart(2,"0")}`).join("\n") : "none";
+        const data = [
+          `VO2max: ${fc.vo2max.toFixed(1)} ml/kg/min (${fc.confidence} confidence, VDOT ${fc.vdot.toFixed(1)})`,
+          `CTL (fitness): ${fc.ctl?.toFixed(1) ?? "?"}  ATL (fatigue): ${fc.atl?.toFixed(1) ?? "?"}  TSB (form): ${fc.tsb?.toFixed(1) ?? "?"}`,
+          `ACWR: ${fc.acwr?.toFixed(2) ?? "?"}  Max HR: ${fc.maxHR} bpm  Rest HR: ${fc.restHR} bpm`,
+          `Race predictions:\n${predStr}`,
+          `Computed: ${fc.computedAt ? format(fc.computedAt, "d MMM yyyy HH:mm") : "unknown"}`,
+        ].join("\n");
+        return { success: true, message: "Fitness summary hämtad", data };
+      }
+
+      case "get_race_history": {
+        const distFilter = input.distance as string | undefined;
+        const recs = await prisma.raceRecord.findMany({
+          where: {
+            userId,
+            ...(distFilter ? { distance: { contains: distFilter, mode: "insensitive" } } : {}),
+          },
+          orderBy: [{ distanceM: "asc" }, { date: "desc" }],
+          select: { distance: true, distanceM: true, time: true, date: true, eventName: true },
+        });
+        if (recs.length === 0) return { success: true, message: "Inga PBs", data: "No race records found." };
+        // Group by distance
+        const byDist = new Map<string, typeof recs>();
+        for (const r of recs) {
+          if (!byDist.has(r.distance)) byDist.set(r.distance, []);
+          byDist.get(r.distance)!.push(r);
+        }
+        const lines: string[] = [];
+        for (const [dist, rs] of byDist) {
+          type RR = { distance: string; distanceM: number; time: number; date: Date; eventName: string | null };
+          const pb = (rs as RR[]).reduce((a, b) => a.time < b.time ? a : b);
+          const mm = Math.floor(pb.time / 60), ss = pb.time % 60;
+          lines.push(`${dist}: PB ${mm}:${String(ss).padStart(2,"0")} (${format(pb.date, "d MMM yyyy")}${pb.eventName ? " · " + pb.eventName : ""}) — ${rs.length} results`);
+        }
+        return { success: true, message: `${recs.length} tävlingsresultat`, data: lines.join("\n") };
+      }
+
+      case "get_readiness": {
+        const [garmin, fc] = await Promise.all([
+          prisma.garminDailySummary.findMany({
+            where: { userId, date: { gte: subDays(new Date(), 7) } },
+            orderBy: { date: "asc" },
+            select: { date: true, restingHR: true, hrvNightly: true, hrvBalance: true, sleepScore: true, sleepDuration: true, bodyBattery: true },
+          }),
+          prisma.fitnessCache.findUnique({ where: { userId }, select: { tsb: true, atl: true, acwr: true } }),
+        ]);
+        const lines: string[] = [];
+        if (garmin.length > 0) {
+          type GDay = { date: Date; restingHR: number | null; hrvNightly: number | null; hrvBalance: string | null; sleepScore: number | null; sleepDuration: number | null; bodyBattery: number | null };
+          const hrv = (garmin as GDay[]).map(g => g.hrvNightly).filter(Boolean);
+          if (hrv.length > 0) lines.push(`HRV (${hrv.length}d): ${hrv.map(v => Math.round(v!)).join(" → ")} ms`);
+          const latest = (garmin as GDay[]).at(-1);
+          if (latest) {
+            if (latest.restingHR) lines.push(`Resting HR today: ${latest.restingHR} bpm`);
+            if (latest.sleepScore) lines.push(`Sleep score last night: ${latest.sleepScore}/100${latest.sleepDuration ? ` · ${(latest.sleepDuration / 3600).toFixed(1)}h` : ""}`);
+            if (latest.bodyBattery) lines.push(`Body Battery: ${latest.bodyBattery}/100`);
+            if (latest.hrvBalance) lines.push(`HRV status: ${latest.hrvBalance}`);
+          }
+        } else {
+          lines.push("No Garmin data available.");
+        }
+        if (fc) {
+          lines.push(`TSB (form): ${fc.tsb?.toFixed(1) ?? "?"}  ATL: ${fc.atl?.toFixed(1) ?? "?"}  ACWR: ${fc.acwr?.toFixed(2) ?? "?"}`);
+        }
+        return { success: true, message: "Readiness data", data: lines.join("\n") || "No readiness data." };
+      }
+
+      case "get_training_blocks": {
+        const blocks = await prisma.trainingBlock.findMany({
+          where: { userId },
+          orderBy: { startDate: "asc" },
+          select: { id: true, name: true, blockType: true, startDate: true, endDate: true, targetKmPerWeek: true, targetIntensity: true, archived: true, actualKm: true },
+        });
+        if (blocks.length === 0) return { success: true, message: "Inga träningsblock", data: "No training blocks defined." };
+        const now = new Date();
+        type Block = { id: string; name: string; blockType: string; startDate: Date; endDate: Date; targetKmPerWeek: number | null; targetIntensity: string | null; archived: boolean; actualKm: number | null };
+        const lines = (blocks as Block[]).map(b => {
+          const status = b.archived ? "archived" : b.startDate <= now && b.endDate >= now ? "CURRENT" : b.startDate > now ? "upcoming" : "past";
+          const kmTarget = b.targetKmPerWeek ? ` target ${b.targetKmPerWeek}km/w` : "";
+          const actual = b.actualKm ? ` actual ${Math.round(b.actualKm)}km` : "";
+          return `[${status}] ${b.name} (${b.blockType}) ${format(b.startDate, "d MMM")}–${format(b.endDate, "d MMM")}${kmTarget}${actual}`;
+        });
+        return { success: true, message: "Träningsblock", data: lines.join("\n") };
       }
 
       case "search_activities": {
