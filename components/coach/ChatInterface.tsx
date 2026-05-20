@@ -1,10 +1,16 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, Bot, User, Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Send, Loader2, Bot, User, Plus, Trash2, ChevronLeft, ChevronRight, CheckCircle2, XCircle, CalendarPlus, ClipboardList, UserCog } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
+
+interface ToolAction {
+  name: string;
+  message: string;
+  success: boolean;
+}
 
 interface Message {
   id: string;
@@ -13,6 +19,7 @@ interface Message {
   cost?: number;
   tokens?: number;
   modelUsed?: string;
+  toolAction?: ToolAction;
 }
 
 interface ConvSummary {
@@ -106,6 +113,10 @@ export function ChatInterface({
           if (data.convId && !convId) {
             setConvId(data.convId as string);
             window.history.replaceState(null, "", `/coach?conv=${data.convId}`);
+          }
+          if (data.toolCall) {
+            const tc = data.toolCall as ToolAction;
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, toolAction: tc } : m));
           }
           if (data.text) {
             fullContent += data.text as string;
@@ -294,7 +305,11 @@ export function ChatInterface({
               )}>
                 {msg.role === "user" ? <User size={14} className="text-accent" /> : <Bot size={14} className="text-muted" />}
               </div>
-              <div className={cn("max-w-[80%] space-y-1", msg.role === "user" ? "items-end" : "items-start")}>
+              <div className={cn("max-w-[80%] space-y-1.5", msg.role === "user" ? "items-end" : "items-start")}>
+                {/* Tool action card — shown above the text response */}
+                {msg.toolAction && (
+                  <ToolActionCard action={msg.toolAction} />
+                )}
                 <div className={cn(
                   "rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap",
                   msg.role === "user"
@@ -339,6 +354,30 @@ export function ChatInterface({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ToolActionCard({ action }: { action: ToolAction }) {
+  const ICONS: Record<string, React.ReactNode> = {
+    create_workout:   <CalendarPlus size={14} />,
+    get_upcoming_plan: <ClipboardList size={14} />,
+    delete_workout:   <Trash2 size={14} />,
+    update_profile:   <UserCog size={14} />,
+  };
+  const icon = ICONS[action.name] ?? <Bot size={14} />;
+  return (
+    <div className={cn(
+      "flex items-center gap-2 px-3 py-2 rounded-xl text-xs border",
+      action.success
+        ? "border-accent/30 bg-accent/5 text-accent"
+        : "border-error/30 bg-error/5 text-error"
+    )}>
+      {action.success
+        ? <CheckCircle2 size={13} className="shrink-0" />
+        : <XCircle size={13} className="shrink-0" />}
+      <span className="shrink-0">{icon}</span>
+      <span className="font-medium">{action.message}</span>
     </div>
   );
 }

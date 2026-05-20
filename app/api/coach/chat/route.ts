@@ -7,6 +7,7 @@ import { buildCoachContext, buildRecentActivitiesSummary } from "@/lib/ai/contex
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { estimateCost } from "@/lib/ai/client";
 import { safeDecrypt } from "@/lib/encrypt";
+import { COACH_TOOLS, toGeminiTools, executeCoachTool } from "@/lib/ai/tools";
 import type { AIMessage } from "@/lib/ai/client";
 import { z } from "zod";
 
@@ -102,7 +103,70 @@ export async function POST(req: NextRequest) {
     data: { conversationId: convId, role: "user", content: message },
   });
 
-  // ── Stream response ──────────────────────────────────────────────────
+  // ── Phase 1: Check for tool use (non-streaming) ─────────────────────
+  // Tool use and text streaming can't coexist in one API response turn.
+  // So: first check if the AI wants to call a tool, execute it server-side,
+  // then stream the follow-up text response.
+  let toolEvent: { name: string; message: string; success: boolean } | null = null;
+
+  if (provider === "claude") {
+    try {
+      const Anthropic = (await import("@anthropic-ai/sdk")).default;
+      const anthropic = new Anthropic({ apiKey });
+      const toolCheck = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 400,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tools: COACH_TOOLS as any,
+        tool_choice: { type: "auto" },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } } as any],
+        messages: messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+      });
+      if (toolCheck.stop_reason === "tool_use") {
+        const toolUse = toolCheck.content.find(b => b.type === "tool_use") as { type: "tool_use"; name: string; input: Record<string, unknown> } | undefined;
+        if (toolUse) {
+          const result = await executeCoachTool(toolUse.name, toolUse.input, userId);
+          toolEvent = { name: toolUse.name, message: result.message, success: result.success };
+          // Inject tool context into the message thread so the AI can reference what happened
+          messages.push({ role: "assistant", content: `[Tool: ${toolUse.name}] ${result.message}` });
+          messages.push({ role: "user", content: "Berätta vad du gjorde och fortsätt konversationen." });
+        }
+      }
+    } catch { /* tool check failed — fall through to normal stream */ }
+  } else {
+    // Gemini function calling
+    try {
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tools: [{ functionDeclarations: toGeminiTools() }] as any,
+        systemInstruction: systemPrompt,
+      });
+      const history = messages.slice(0, -1).map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }],
+      }));
+      const chat = model.startChat({ history });
+      const lastUser = messages.at(-1)!;
+      const userText = recentActivities
+        ? `[Recent training data]\n${recentActivities}\n\n---\n\n${lastUser.content}`
+        : lastUser.content;
+      const result = await chat.sendMessage(userText);
+      const fcPart = result.response.candidates?.[0]?.content.parts.find(p => "functionCall" in p);
+      if (fcPart && "functionCall" in fcPart && fcPart.functionCall) {
+        const fc = fcPart.functionCall;
+        const toolResult = await executeCoachTool(fc.name, fc.args as Record<string, unknown>, userId);
+        toolEvent = { name: fc.name, message: toolResult.message, success: toolResult.success };
+        messages.push({ role: "assistant", content: `[Tool: ${fc.name}] ${toolResult.message}` });
+        messages.push({ role: "user", content: "Berätta vad du gjorde och fortsätt konversationen." });
+      }
+    } catch { /* tool check failed */ }
+  }
+
+  // ── Phase 2: Stream text response ────────────────────────────────────
   const aiClient = provider === "claude"
     ? new ClaudeClient(apiKey)
     : new GeminiClient(apiKey);
@@ -116,6 +180,11 @@ export async function POST(req: NextRequest) {
       try {
         // Send conversationId first so client can track it
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ convId })}\n\n`));
+
+        // If a tool was called, emit the action card event before streaming text
+        if (toolEvent) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ toolCall: toolEvent })}\n\n`));
+        }
 
         for await (const chunk of aiClient.stream(systemPrompt, messages, recentActivities)) {
           if (chunk.done) {

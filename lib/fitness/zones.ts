@@ -218,6 +218,155 @@ export function buildHRZonesFromLT(
   };
 }
 
+// ── Statistical zone estimation ────────────────────────────────────────────
+
+export interface StatisticalZoneResult {
+  lt1HR: number;
+  lt2HR: number;
+  lt1PaceSecPerKm: number;
+  lt2PaceSecPerKm: number;
+  rSquared: number;          // 0–1, confidence of the piecewise fit
+  bucketCount: number;       // number of valid pace buckets used
+  zones: HRZones;
+}
+
+interface BucketPoint { pace: number; medianHR: number; count: number }
+
+/**
+ * Estimate HR zones statistically from a large dataset of training runs.
+ * Algorithm:
+ *   1. Compute grade-adjusted pace (GAP) per activity
+ *   2. Bucket by pace using Freedman-Diaconis optimal bin width
+ *   3. Compute weighted median HR per bucket (robust to outliers)
+ *   4. Find two breakpoints via exhaustive piecewise linear regression
+ *   5. Breakpoints = LT1 and LT2 → build non-uniform zones
+ *
+ * Requires ≥ 8 valid buckets with ≥ 10 runs each for a reliable estimate.
+ * Returns null if data is insufficient.
+ */
+export function estimateZonesFromStatisticalAnalysis(
+  runs: Array<{
+    avgHR: number;
+    distanceM: number;
+    movingTimeSec: number;
+    totalElevationGain: number;
+    weatherTemp?: number | null;
+    startDate?: Date;
+  }>,
+  maxHR: number,
+  restHR: number,
+): StatisticalZoneResult | null {
+  // ── 1. Filter and compute GAP ──────────────────────────────────────────
+  const MIN_DIST = 4000;
+  const MIN_DURATION_SEC = 900; // 15 min
+
+  const points = runs
+    .filter(r =>
+      r.avgHR > maxHR * 0.55 && r.avgHR < maxHR * 0.95 &&
+      r.distanceM >= MIN_DIST && r.movingTimeSec >= MIN_DURATION_SEC
+    )
+    .map(r => {
+      const rawPace = r.movingTimeSec / (r.distanceM / 1000);
+      const grade = Math.min(0.15, Math.max(0, r.totalElevationGain / r.distanceM));
+      const gap = rawPace / (1 + grade * 0.033);
+      // Downweight hot runs (heat inflates HR artificially)
+      const tempWeight = (r.weatherTemp ?? 15) > 25 ? 0.4 : 1.0;
+      // Recency weight (90-day half-life for zone stability)
+      const daysAgo = r.startDate
+        ? (Date.now() - r.startDate.getTime()) / 86_400_000
+        : 180;
+      const recency = Math.exp(-daysAgo / 180);
+      return { gap, hr: r.avgHR, weight: tempWeight * recency };
+    })
+    .filter(p => p.gap > 200 && p.gap < 600); // 3:20–10:00/km only
+
+  if (points.length < 40) return null;
+
+  // ── 2. Freedman-Diaconis bin width ─────────────────────────────────────
+  const paces = points.map(p => p.gap).sort((a, b) => a - b);
+  const n = paces.length;
+  const q1 = paces[Math.floor(n * 0.25)];
+  const q3 = paces[Math.floor(n * 0.75)];
+  const iqr = q3 - q1;
+  const binWidth = Math.max(12, Math.min(30, Math.round(2 * iqr * Math.pow(n, -1 / 3))));
+
+  // ── 3. Build buckets with weighted median HR ────────────────────────────
+  const bucketMap = new Map<number, Array<{ hr: number; w: number }>>();
+  for (const p of points) {
+    const key = Math.round(p.gap / binWidth) * binWidth;
+    if (!bucketMap.has(key)) bucketMap.set(key, []);
+    bucketMap.get(key)!.push({ hr: p.hr, w: p.weight });
+  }
+
+  const MIN_COUNT = 10;
+  const buckets: BucketPoint[] = [...bucketMap.entries()]
+    .filter(([, pts]) => pts.length >= MIN_COUNT)
+    .map(([pace, pts]) => {
+      const sorted = pts.sort((a, b) => a.hr - b.hr);
+      const totalW = sorted.reduce((s, p) => s + p.w, 0);
+      let cum = 0, medianHR = sorted[0].hr;
+      for (const p of sorted) { cum += p.w; if (cum >= totalW / 2) { medianHR = p.hr; break; } }
+      return { pace, medianHR, count: pts.length };
+    })
+    .sort((a, b) => a.pace - b.pace);
+
+  if (buckets.length < 8) return null;
+
+  // ── 4. Exhaustive piecewise linear search for two breakpoints ──────────
+  const nb = buckets.length;
+  const paceArr = buckets.map(b => b.pace);
+  const hrArr   = buckets.map(b => b.medianHR);
+
+  let bestErr = Infinity, bp1 = 2, bp2 = 4;
+  for (let i = 1; i < nb - 3; i++) {
+    for (let j = i + 2; j < nb - 1; j++) {
+      const err = segErr(paceArr, hrArr, 0, i) + segErr(paceArr, hrArr, i, j) + segErr(paceArr, hrArr, j, nb - 1);
+      if (err < bestErr) { bestErr = err; bp1 = i; bp2 = j; }
+    }
+  }
+
+  // R² — how well does the 3-segment model fit?
+  const meanHR = hrArr.reduce((s, v) => s + v, 0) / nb;
+  const totalVar = hrArr.reduce((s, v) => s + (v - meanHR) ** 2, 0);
+  const rSquared = Math.max(0, Math.round((1 - bestErr / totalVar) * 100) / 100);
+
+  if (rSquared < 0.70) return null; // poor fit — not enough HR-pace signal
+
+  const lt1PaceSecPerKm = paceArr[bp1];
+  const lt2PaceSecPerKm = paceArr[bp2];
+  const lt1HR = Math.round(hrArr[bp1]);
+  const lt2HR = Math.round(hrArr[bp2]);
+
+  // Sanity: LT1 < LT2 < maxHR, minimum separation of 5 bpm
+  if (lt1HR >= lt2HR - 5 || lt2HR >= maxHR * 0.98) return null;
+
+  // ── 5. Build non-uniform zones ─────────────────────────────────────────
+  const z2width = Math.max(4, Math.round((lt2HR - lt1HR) * 0.12));
+  const zones: HRZones = {
+    z1: [restHR,            lt1HR - z2width],
+    z2: [lt1HR - z2width,   lt1HR],
+    z3: [lt1HR,             lt2HR],
+    z4: [lt2HR,             Math.min(lt2HR + 8, maxHR - 2)],
+    z5: [Math.min(lt2HR + 8, maxHR - 2), maxHR],
+    maxHR,
+    restHR,
+  };
+
+  return { lt1HR, lt2HR, lt1PaceSecPerKm, lt2PaceSecPerKm, rSquared, bucketCount: buckets.length, zones };
+}
+
+function segErr(paces: number[], hrs: number[], from: number, to: number): number {
+  if (to - from < 2) return 0;
+  const xs = paces.slice(from, to + 1), ys = hrs.slice(from, to + 1);
+  const n = xs.length;
+  const mx = xs.reduce((s, v) => s + v, 0) / n;
+  const my = ys.reduce((s, v) => s + v, 0) / n;
+  const slope = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) /
+                (xs.reduce((s, x) => s + (x - mx) ** 2, 0) || 1e-6);
+  const b = my - slope * mx;
+  return xs.reduce((s, x, i) => s + (ys[i] - (slope * x + b)) ** 2, 0);
+}
+
 // Classify an average HR value into a zone (1-5). Returns 0 if no HR.
 export function classifyHRZone(avgHR: number | null, zones: HRZones): number {
   if (!avgHR) return 0;

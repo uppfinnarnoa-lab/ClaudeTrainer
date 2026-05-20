@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { StatsClient } from "./stats-client";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries } from "@/lib/fitness/zones";
+import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis } from "@/lib/fitness/zones";
 import { computeTSS, buildLoadCurve, computeACWR } from "@/lib/fitness/training-load";
 import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace } from "@/lib/fitness/vo2max";
 import { RACE_DISTANCES } from "@/lib/fitness/paces";
@@ -233,8 +233,20 @@ export default async function StatsPage() {
   } : null;
   const acwr = computeACWR(dailyTSSMap, now);
 
+  // Statistical zone estimation from all running data
+  const statZones = estimateZonesFromStatisticalAnalysis(
+    activities.filter((a: A) => /run|trail/i.test(a.sportType) && a.averageHeartrate).map((a: A) => ({
+      avgHR: a.averageHeartrate!,
+      distanceM: a.distance,
+      movingTimeSec: a.movingTime,
+      totalElevationGain: a.totalElevationGain,
+      startDate: a.startDate,
+    })),
+    computedMaxHR, restHR,
+  );
+
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr);
+    zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr, statZones);
 }
 
 // Shared render — used by both fast and slow paths
@@ -252,6 +264,7 @@ function renderStats(
   predictions: { label: string; meters: number; peak: number; today: number; riegel: number | null; rangeLo: number; rangeHi: number }[],
   polarisation: { z1Pct: number; z2Pct: number; z3Pct: number } | null,
   acwr: number | null,
+  statZones?: import("@/lib/fitness/zones").StatisticalZoneResult | null,
 ) {
   return (
     <div className="space-y-2">
@@ -273,6 +286,7 @@ function renderStats(
         predictions={predictions}
         polarisation={polarisation}
         acwr={acwr}
+        statZones={statZones ?? null}
       />
     </div>
   );

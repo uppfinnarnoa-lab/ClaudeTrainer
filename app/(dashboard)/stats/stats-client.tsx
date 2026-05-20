@@ -9,10 +9,11 @@ import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { HRZonesChart } from "@/components/charts/HRZonesChart";
 import { MetricTooltip } from "@/components/stats/metric-tooltip";
 import { tooltips } from "@/lib/fitness/tooltips";
+import { secPerKmToPaceStr } from "@/lib/fitness/paces";
 import { formatDuration } from "@/lib/utils";
 import type { DailyLoad } from "@/lib/fitness/training-load";
 import { tsbLabel } from "@/lib/fitness/training-load";
-import type { HRZones, PaceZones } from "@/lib/fitness/zones";
+import type { HRZones, PaceZones, StatisticalZoneResult } from "@/lib/fitness/zones";
 import type { VO2maxEstimate } from "@/lib/fitness/vo2max";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ interface Props {
   predictions: RacePred[];
   polarisation: Polarisation | null;
   acwr: number | null;
+  statZones: StatisticalZoneResult | null;
 }
 
 function pct(curr: number, prev: number) {
@@ -49,7 +51,7 @@ type Section = (typeof SECTIONS)[number];
 
 export function StatsClient(props: Props) {
   const { overview: o, sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr } = props;
+    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -176,6 +178,9 @@ export function StatsClient(props: Props) {
             action={<ZoneCalibrationButton />}>
             <HRZonesChart zoneSeconds={zoneSeconds} />
           </SectionCard>
+
+          {/* Statistical zone analysis from bucketed HR-pace data */}
+          {statZones && <StatisticalZonesCard sz={statZones} />}
 
           {/* Polarisation score (Seiler 80/20) */}
           {polarisation && <PolarisationCard pol={polarisation} />}
@@ -415,6 +420,46 @@ function PolarisationCard({ pol }: { pol: { z1Pct: number; z2Pct: number; z3Pct:
           <span className="ml-auto text-muted">Mål: 80 · 5–10 · 15</span>
         </div>
         <p className="text-xs text-muted">{msg}</p>
+      </div>
+    </div>
+  );
+}
+
+function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult }) {
+  const confColor = sz.rSquared >= 0.90 ? "#6EE7B7" : sz.rSquared >= 0.80 ? "#FBBF24" : "#F87171";
+  const confLabel = sz.rSquared >= 0.90 ? "Hög" : sz.rSquared >= 0.80 ? "Medium" : "Låg";
+  return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-primary">Statistisk zonanalys — HR vs tempo</p>
+          <p className="text-xs text-muted mt-0.5">{sz.bucketCount} tempogrupper analyserade · piecewise regression</p>
+        </div>
+        <span className="text-xs font-semibold font-mono" style={{ color: confColor }}>
+          R² {sz.rSquared.toFixed(2)} · {confLabel} konfidens
+        </span>
+      </div>
+      <div className="p-4 grid grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT1 — Aerob tröskel</p>
+          <p className="text-2xl font-semibold font-mono text-primary">{sz.lt1HR} <span className="text-sm text-muted font-normal">bpm</span></p>
+          <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)}/km (GAP)</p>
+          <p className="text-xs text-muted">Z1/Z2-gräns — håll under för lätta pass</p>
+        </div>
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT2 — Laktattröskel</p>
+          <p className="text-2xl font-semibold font-mono text-primary">{sz.lt2HR} <span className="text-sm text-muted font-normal">bpm</span></p>
+          <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt2PaceSecPerKm)}/km (GAP)</p>
+          <p className="text-xs text-muted">Z3/Z4-gräns — tröskelträningsnivå</p>
+        </div>
+      </div>
+      <div className="border-t border-border px-4 py-3 bg-surface-2">
+        <p className="text-xs text-muted">
+          Estimerat från dina {sz.bucketCount} tempogrupper med minst 10 pass var.
+          Zonbredderna är ojämna — Z3 = LT1→LT2 ({sz.lt2HR - sz.lt1HR} bpm),
+          Z2 smal ({Math.round((sz.lt2HR - sz.lt1HR) * 0.12)} bpm).
+          Använd "AI-estimat" för att tillämpa dessa zoner.
+        </p>
       </div>
     </div>
   );

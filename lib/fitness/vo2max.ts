@@ -203,6 +203,40 @@ export function vo2maxFromSubmaxEffort(
   return vo2AtPace / (avgHR / maxHR);
 }
 
+// ── Grade-Adjusted Pace ───────────────────────────────────────────────────
+
+/**
+ * Adjust flat pace for elevation gain.
+ * Minetti (2002) cost-of-transport model: uphill adds ~3.3% per % grade.
+ * Eliminates the biggest source of noise in the HR-pace regression for hilly runs.
+ */
+export function gradeAdjustedPace(paceSecPerKm: number, elevGainM: number, distM: number): number {
+  if (distM < 500 || elevGainM <= 0) return paceSecPerKm;
+  const grade = Math.min(0.15, elevGainM / distM); // cap at 15%
+  return paceSecPerKm / (1 + grade * 0.033);
+}
+
+/**
+ * VDOT estimate from a tempo/threshold training run (not a race).
+ * Applies when avgHR is in the 83–90% maxHR range — this is threshold effort.
+ * Threshold pace ≈ avgPace / 0.95 (runner is at ~95% of threshold during a tempo).
+ * Returns null if HR is outside the tempo range.
+ */
+export function vdotFromTempoRun(
+  avgGapSecPerKm: number,
+  avgHR: number,
+  maxHR: number,
+): number | null {
+  const hrFraction = avgHR / maxHR;
+  if (hrFraction < 0.82 || hrFraction > 0.92) return null;
+  // Conservative: at 88% HRmax the runner covers ~95% of threshold pace
+  const thresholdPace = avgGapSecPerKm / 0.95;
+  // Threshold ≈ 60-min all-out → approximate with 3500m equivalent duration
+  const approxTimeSec = thresholdPace * 3.5;
+  const v = vdotFromRace(3500, approxTimeSec);
+  return v > 30 && v < 90 ? v : null;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function looksLikeRace(name: string): boolean {
@@ -294,6 +328,7 @@ interface ActivitySample {
   bestEfforts?: unknown;
   splitsMetric?: unknown;
   startDate?: Date;
+  totalElevationGain?: number | null;
 }
 
 export interface RacePB {
@@ -412,16 +447,32 @@ export function estimateVO2max(
   // ── MODEL 3: Cooper (1968) — plausibility check only ─────────────────────
   const model3 = restHR > 0 && maxHR > 0 ? vo2maxCooper(maxHR, restHR) : null;
 
-  // ── MODEL 4: HR-pace regression (Firstbeat-style, recency-weighted) ───────
-  // Exclude interval sessions — their avg pace is diluted by warm-up/recovery
+  // ── TEMPO-RUN VDOT candidates (Model 1 supplement) ───────────────────────
+  // Runs at 83-90% maxHR that aren't intervals can yield threshold-based VDOT.
+  // Weighted 0.6× (less reliable than a true race, better than easy run).
+  for (const a of runs) {
+    if (!a.avgHR || !a.distanceM || !a.timeSec) continue;
+    if (looksLikeIntervals(a.name ?? "") || looksLikeRace(a.name ?? "")) continue;
+    const rawPace = a.timeSec / (a.distanceM / 1000);
+    const gap = gradeAdjustedPace(rawPace, a.totalElevationGain ?? 0, a.distanceM);
+    const v = vdotFromTempoRun(gap, a.avgHR, maxHR);
+    if (v !== null) {
+      const w = recencyWeight(a.startDate) * 0.6;
+      candidates.push({ v, weight: w, source: "tempo-run" });
+    }
+  }
+
+  // ── MODEL 4: HR-pace regression (Firstbeat-style, GAP-corrected, recency-weighted) ──
+  // Use grade-adjusted pace (GAP) to eliminate elevation noise from hilly runs.
+  // Exclude interval sessions — their avg pace is diluted by warm-up/recovery.
   const regressionRuns = runs
     .filter(a => a.avgHR && a.distanceM >= 3000 && a.timeSec > 0
       && !looksLikeIntervals(a.name ?? ""))
-    .map(a => ({
-      avgHR: a.avgHR!,
-      avgPaceSecPerKm: a.timeSec / (a.distanceM / 1000),
-      weight: recencyWeight(a.startDate), // recency-weighted
-    }));
+    .map(a => {
+      const rawPace = a.timeSec / (a.distanceM / 1000);
+      const gap = gradeAdjustedPace(rawPace, a.totalElevationGain ?? 0, a.distanceM);
+      return { avgHR: a.avgHR!, avgPaceSecPerKm: gap, weight: recencyWeight(a.startDate) };
+    });
   const nValidRegression = regressionRuns.filter(r =>
     r.avgHR > maxHR * 0.60 && r.avgHR < maxHR * 0.92
   ).length;

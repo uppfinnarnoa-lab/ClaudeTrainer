@@ -23,7 +23,7 @@ type Act = {
   sportType: string; name: string; distance: number; movingTime: number;
   averageHeartrate: number | null; maxHeartrate: number | null;
   averageSpeed: number | null; isRace: boolean; bestEfforts: unknown;
-  startDate: Date;
+  startDate: Date; totalElevationGain: number;
 };
 
 async function loadActivities(userId: string) {
@@ -32,7 +32,7 @@ async function loadActivities(userId: string) {
     orderBy: { startDate: "asc" },
     select: {
       sportType: true, name: true, distance: true, movingTime: true,
-      averageHeartrate: true, maxHeartrate: true,
+      averageHeartrate: true, maxHeartrate: true, totalElevationGain: true,
       averageSpeed: true, isRace: true, bestEfforts: true, startDate: true,
     },
   });
@@ -88,7 +88,7 @@ export async function updateVO2maxAndPaces(userId: string) {
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
-      startDate: a.startDate,
+      startDate: a.startDate, totalElevationGain: a.totalElevationGain,
     })),
     maxHR, restHR, racePBs,
   );
@@ -246,7 +246,7 @@ export async function updateHRZones(userId: string) {
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
-      startDate: a.startDate,
+      startDate: a.startDate, totalElevationGain: a.totalElevationGain,
     })),
     maxHR, restHR, racePBs,
   );
