@@ -2,14 +2,16 @@
  * Centralized color logic for the planner.
  *
  * Running → color depends on workout TYPE:
- *   Tävling / race          → Yellow  #FBBF24
- *   Tröskell / Tempo / LT   → Pink    #F472B6
- *   Hårda intervaller       → Purple  #818CF8
- *   Easy / Distans / default→ Sky     #7DD3FC
+ *   Race / Tävling          → Yellow       #FBBF24
+ *   Easy run / Distans      → Ljusblå      #7DD3FC
+ *   Tempo                   → Grönturkos   #2DD4BF
+ *   LT (Lactate Threshold)  → Rosa         #F472B6
+ *   AT (Aerobic Threshold)  → Lila         #818CF8
+ *   Speedwork / Intervall   → Mörkblå      #3B82F6
  *
  * Other sports → color depends on SPORT:
  *   Cycling / Cykel         → Orange  #FB923C
- *   Orienteering / OL       → Teal    #2DD4BF
+ *   Orienteering / OL       → Teal    #14B8A6
  *   Strength / Styrka / Gym → Amber   #F97316
  *   Nordic Skiing           → Ice     #BAE6FD
  *   Roller Skiing           → Sky     #38BDF8
@@ -37,7 +39,7 @@ export function workoutColor(sportName: string, typeName?: string | null): strin
 
   // Non-running sports → colour by sport
   if (/cycl|ride|cykel|bike/.test(s)) return "#FB923C";       // orange
-  if (/orienteer|ol\b/.test(s))        return "#2DD4BF";       // teal
+  if (/orienteer|ol\b/.test(s))        return "#14B8A6";       // teal (distinct from tempo)
   if (/strength|styrka|gym|weight/.test(s)) return "#F97316";  // amber
   if (/nordicski|klassisk|backcountry|längdski/.test(s)) return "#BAE6FD"; // ice blue
   if (/rollerski|rullski/.test(s))     return "#38BDF8";       // sky blue
@@ -45,10 +47,12 @@ export function workoutColor(sportName: string, typeName?: string | null): strin
 
   // Running (and trail run, virtual run) → colour by type
   if (/run|trail|virtual/.test(s)) {
-    if (/tävl|race|lopp|mila|stafett|sic\b|sprint|2dagars/.test(t)) return "#FBBF24"; // yellow — race
-    if (/tröskel|threshold|tempo|lång tröskel|lt\b/.test(t))         return "#F472B6"; // pink — threshold
-    if (/intervall|interval|4x4|fartlek|tabata|korta|mosse/.test(t)) return "#818CF8"; // purple — hard intervals
-    return "#7DD3FC"; // sky — easy / distans / default
+    if (/tävl|race|lopp|mila|stafett|sic\b|2dagars/.test(t))                    return "#FBBF24"; // yellow  — race
+    if (/\bat\b|aerob tröskel|aerobic threshold/.test(t))                         return "#818CF8"; // lila    — AT  (check before LT)
+    if (/\blt\b|tröskel|threshold|lång tröskel|lactate/.test(t))                  return "#F472B6"; // rosa    — LT
+    if (/\btempo\b/.test(t))                                                       return "#2DD4BF"; // grönturkos — Tempo
+    if (/speed|speedwork|intervall|interval|fartlek|tabata|korta|mosse|4x|5x/.test(t)) return "#3B82F6"; // mörkblå — Speedwork
+    return "#7DD3FC"; // ljusblå — easy / distans / default
   }
 
   return "#7DD3FC"; // fallback
