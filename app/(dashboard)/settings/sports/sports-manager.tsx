@@ -13,6 +13,23 @@ const PRESET_COLORS = [
   "#F87171","#FBBF24","#F97316","#A78BFA","#EC4899",
 ];
 
+// Canonical running type colors
+const RUN_TYPE_COLORS: Record<string, string> = {
+  "easy": "#7DD3FC", "lätt": "#7DD3FC", "distans": "#7DD3FC", "long": "#7DD3FC", "lång": "#7DD3FC",
+  "tempo": "#2DD4BF",
+  "lt": "#F472B6", "tröskel": "#F472B6", "threshold": "#F472B6",
+  "at": "#818CF8", "aerob": "#818CF8",
+  "speed": "#3B82F6", "intervall": "#3B82F6", "interval": "#3B82F6", "fartlek": "#3B82F6",
+};
+
+function guessTypeColor(name: string, sportColor: string): string {
+  const n = name.toLowerCase();
+  for (const [key, color] of Object.entries(RUN_TYPE_COLORS)) {
+    if (n.includes(key)) return color;
+  }
+  return sportColor;
+}
+
 export function SportsManager({ sports: initial }: { sports: Sport[] }) {
   const router = useRouter();
   const [sports, setSports] = useState(initial);
@@ -24,7 +41,8 @@ export function SportsManager({ sports: initial }: { sports: Sport[] }) {
   const [newSportColor, setNewSportColor] = useState(PRESET_COLORS[0]);
 
   // New type form per sport
-  const [newTypeName, setNewTypeName] = useState<Record<string, string>>({});
+  const [newTypeName,  setNewTypeName]  = useState<Record<string, string>>({});
+  const [newTypeColor, setNewTypeColor] = useState<Record<string, string>>({});
 
   async function addSport() {
     if (!newSportName.trim()) return;
@@ -54,10 +72,11 @@ export function SportsManager({ sports: initial }: { sports: Sport[] }) {
     if (!name) return;
     setSaving(true);
     const sport = sports.find(s => s.id === sportId)!;
+    const color = newTypeColor[sportId] ?? guessTypeColor(name, sport.color);
     const res = await fetch("/api/sports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "type", name, sportId, color: sport.color }),
+      body: JSON.stringify({ kind: "type", name, sportId, color }),
     });
     if (res.ok) {
       const type = await res.json();
@@ -66,6 +85,7 @@ export function SportsManager({ sports: initial }: { sports: Sport[] }) {
         : s
       ));
       setNewTypeName(prev => ({ ...prev, [sportId]: "" }));
+      setNewTypeColor(prev => ({ ...prev, [sportId]: "" }));
     }
     setSaving(false);
   }
@@ -107,7 +127,11 @@ export function SportsManager({ sports: initial }: { sports: Sport[] }) {
             <div className="border-t border-border px-4 py-3 space-y-2">
               <div className="flex flex-wrap gap-2">
                 {sport.workoutTypes.map(type => (
-                  <div key={type.id} className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-2 border border-border text-sm">
+                  <div key={type.id}
+                    className="group flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-2 border border-border text-sm"
+                    style={{ borderLeftWidth: 3, borderLeftColor: type.color ?? sport.color }}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: type.color ?? sport.color }} />
                     <span className="text-primary">{type.name}</span>
                     <button
                       onClick={() => deleteType(sport.id, type.id)}
@@ -120,21 +144,52 @@ export function SportsManager({ sports: initial }: { sports: Sport[] }) {
               </div>
 
               {/* Add type */}
-              <div className="flex gap-2 mt-2">
-                <input
-                  value={newTypeName[sport.id] ?? ""}
-                  onChange={e => setNewTypeName(p => ({ ...p, [sport.id]: e.target.value }))}
-                  onKeyDown={e => e.key === "Enter" && addType(sport.id)}
-                  placeholder="New type name (e.g. Easy Run, LT Run)"
-                  className="flex-1 rounded-xl border border-border bg-surface-2 px-3 py-1.5 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50"
-                />
-                <button
-                  onClick={() => addType(sport.id)}
-                  disabled={saving || !newTypeName[sport.id]?.trim()}
-                  className="px-3 py-1.5 rounded-xl bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 disabled:opacity-40 transition"
-                >
-                  <Plus size={15} />
-                </button>
+              <div className="space-y-2 mt-2">
+                <div className="flex gap-2">
+                  <input
+                    value={newTypeName[sport.id] ?? ""}
+                    onChange={e => {
+                      const n = e.target.value;
+                      setNewTypeName(p => ({ ...p, [sport.id]: n }));
+                      // Auto-guess color from name if not manually set
+                      const guessed = guessTypeColor(n, sport.color);
+                      setNewTypeColor(p => ({ ...p, [sport.id]: guessed }));
+                    }}
+                    onKeyDown={e => e.key === "Enter" && addType(sport.id)}
+                    placeholder="New type name (e.g. Easy Run, LT, Tempo)"
+                    className="flex-1 rounded-xl border border-border bg-surface-2 px-3 py-1.5 text-sm text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  />
+                  <button
+                    onClick={() => addType(sport.id)}
+                    disabled={saving || !newTypeName[sport.id]?.trim()}
+                    className="px-3 py-1.5 rounded-xl bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 disabled:opacity-40 transition"
+                  >
+                    {saving ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+                  </button>
+                </div>
+                {/* Color picker for type */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted">Color:</span>
+                  <div className="flex gap-1.5">
+                    {[...new Set([
+                      "#7DD3FC","#2DD4BF","#F472B6","#818CF8","#3B82F6",
+                      "#FBBF24","#6EE7B7","#FB923C","#F87171","#A78BFA",
+                    ])].map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setNewTypeColor(p => ({ ...p, [sport.id]: c }))}
+                        className="w-5 h-5 rounded-full border-2 transition-transform hover:scale-110"
+                        style={{
+                          backgroundColor: c,
+                          borderColor: (newTypeColor[sport.id] ?? guessTypeColor(newTypeName[sport.id] ?? "", sport.color)) === c
+                            ? "white" : "transparent",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <span className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: newTypeColor[sport.id] ?? guessTypeColor(newTypeName[sport.id] ?? "", sport.color) }} />
+                </div>
               </div>
             </div>
           )}

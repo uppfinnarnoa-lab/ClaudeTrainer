@@ -278,7 +278,7 @@ export default async function StatsPage() {
     for (const a of activities as A[]) {
       if (!a.averageHeartrate || !a.averageSpeed) continue;
       if (!a.sportType.toLowerCase().includes("run")) continue;
-      if (Math.abs(a.averageHeartrate - pct75HR) > 5) continue; // ±5 bpm window around 75% HRmax
+      if (Math.abs(a.averageHeartrate - pct75HR) >= 5) continue; // strict ±5 bpm window around 75% HRmax
       if (a.distance < 4000 || a.movingTime < 900) continue;
       const wk = format(startOfWeek(a.startDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
       const pace = 1000 / a.averageSpeed;
@@ -301,7 +301,7 @@ export default async function StatsPage() {
   let injuryRisk: number | null = null;
   if (acwr !== null) {
     const acwrRisk = acwr > 1.5 ? 50 : acwr > 1.3 ? 30 : acwr < 0.8 ? 10 : 0;
-    const rampRisk = rampRate !== null && rampRate > 10 ? 30 : rampRate !== null && rampRate > 20 ? 50 : 0;
+    const rampRisk = rampRate !== null && rampRate > 20 ? 50 : rampRate !== null && rampRate > 10 ? 30 : 0;
     injuryRisk = Math.min(100, acwrRisk + rampRisk);
   }
 
