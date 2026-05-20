@@ -373,11 +373,14 @@ export function estimateVO2max(
     }
   }
 
-  // Race PBs from stored records — 2× weight multiplier (verified race times)
+  // Race PBs from stored records — higher weight + slower recency decay than training runs
+  // A verified 5K PB from 1 year ago is still strong evidence of fitness level.
   if (racePBs) {
     for (const pb of racePBs) {
       if (pb.distanceM >= 800 && pb.timeSec > 0) {
-        const w = recencyWeight(pb.date) * 2.0;
+        // 365-day half-life (vs 130 days for training runs) — PBs stay relevant longer
+        const daysAgo = (Date.now() - pb.date.getTime()) / (1000 * 60 * 60 * 24);
+        const w = Math.exp(-daysAgo / 365) * 4.0; // 4× multiplier (vs 2× for training)
         const v = vdotFromRace(pb.distanceM, pb.timeSec);
         if (v > 35 && v < 90) candidates.push({ v, weight: w, source: "race-pb" });
       }
@@ -451,9 +454,10 @@ export function estimateVO2max(
 
   // ── WEIGHTED MEAN — race PBs dominate when present ───────────────────────
   const hasRacePBs = racePBCandidates.length > 0 || model6Vdot !== null;
-  const vdotWeight = hasRacePBs ? 0.55 : 0.00;
-  const csWeight   = model6Vdot !== null ? 0.15 : 0.00;
-  const regrWeight = hasRacePBs ? Math.min(model4Weight, 0.22) : model4Weight;
+  // Increased race PB weight: verified race times are the most accurate VO2max signal
+  const vdotWeight = hasRacePBs ? 0.65 : 0.00;
+  const csWeight   = model6Vdot !== null ? 0.12 : 0.00;
+  const regrWeight = hasRacePBs ? Math.min(model4Weight, 0.12) : model4Weight;
   type ModelEntry = [number | null, number, string];
   const models: ModelEntry[] = [
     [model1Vdot,  vdotWeight, "VDOT (pace)"],

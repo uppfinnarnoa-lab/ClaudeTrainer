@@ -113,8 +113,21 @@ export default async function StatsPage() {
       return Object.values(weeklyVolumes[key] ?? {}).reduce((s, v) => s + v.km, 0);
     });
 
-    // Build load curve for chart — use a lightweight version from cache values
-    const loadCurve = buildSimpleLoadCurve(fitnessCache.ctl ?? 0, fitnessCache.atl ?? 0, fitnessCache.tsb ?? 0);
+    // Build load curve: fetch last 24 weeks of activities (small query, no JSON blobs)
+    // 24w = 8w CTL warm-up + 16w display window
+    const recentForCurve = await prisma.activity.findMany({
+      where: { userId, startDate: { gte: subDays(now, 168) } },
+      select: { movingTime: true, averageHeartrate: true, startDate: true },
+      orderBy: { startDate: "asc" },
+    });
+    const curveTSSMap = new Map<string, number>();
+    for (const a of recentForCurve) {
+      const key = format(a.startDate, "yyyy-MM-dd");
+      const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR, restHR });
+      curveTSSMap.set(key, (curveTSSMap.get(key) ?? 0) + tss);
+    }
+    const fullCurve = buildLoadCurve(curveTSSMap, subDays(now, 168), now);
+    const loadCurve = fullCurve.slice(-112); // last 16 weeks for display
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr);
@@ -275,11 +288,6 @@ type OverviewResult = {
 };
 function buildOverview(_: OverviewResult): OverviewResult { return _; } // just for type inference
 
-function buildSimpleLoadCurve(ctl: number, atl: number, tsb: number): import("@/lib/fitness/training-load").DailyLoad[] {
-  // Returns a minimal single-point curve for the today values
-  // The full chart uses cached weekly data — this is just for the summary cards
-  return [{ date: new Date().toISOString().split("T")[0], tss: 0, atl, ctl, tsb }];
-}
 
 function normalizeSport(t: string): string {
   const s = t.toLowerCase();
