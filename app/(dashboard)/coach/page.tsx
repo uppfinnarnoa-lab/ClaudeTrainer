@@ -16,12 +16,14 @@ export default async function CoachPage({
     prisma.conversation.findMany({
       where: { userId },
       orderBy: { updatedAt: "desc" },
-      take: 20,
-      select: { id: true, title: true, updatedAt: true, _count: { select: { messages: true } } },
+      take: 30,
+      select: {
+        id: true, title: true, updatedAt: true,
+        _count: { select: { messages: true } },
+      },
     }),
   ]);
 
-  // Load conversation: explicit ?conv=ID or most recent
   const targetId = conv ?? conversations[0]?.id;
   const initialMessages = targetId
     ? await prisma.message.findMany({
@@ -55,7 +57,8 @@ export default async function CoachPage({
   }));
 
   return (
-    <div className="-mx-6 -my-6 h-[calc(100vh-64px)] flex">
+    // Escape the dashboard's p-6 padding and max-w-7xl to fill the full content area
+    <div className="-mx-6 -my-6" style={{ height: "calc(100vh - 0px)" }}>
       <ChatInterface
         provider={provider}
         hasApiKey={hasApiKey}
