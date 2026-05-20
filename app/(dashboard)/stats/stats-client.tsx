@@ -39,6 +39,10 @@ interface Props {
   polarisation: Polarisation | null;
   acwr: number | null;
   statZones: StatisticalZoneResult | null;
+  overviewRun: {
+    thisWeek: SumData; thisMonth: SumData; ytd: SumData;
+    lyWeek: SumData; lyMonth: SumData; lyYtd: SumData;
+  };
 }
 
 function pct(curr: number, prev: number) {
@@ -50,7 +54,9 @@ const SECTIONS = ["Overview", "Volume", "Load", "Zones", "Fitness"] as const;
 type Section = (typeof SECTIONS)[number];
 
 export function StatsClient(props: Props) {
-  const { overview: o, sparklines, weeklyVolumes, loadCurve, todayLoad,
+  const [sportMode, setSportMode] = useState<"all" | "run">("all");
+  const o = sportMode === "run" ? props.overviewRun : props.overview;
+  const { sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
@@ -89,6 +95,18 @@ export function StatsClient(props: Props) {
       {/* ── Overview ── */}
       {section === "Overview" && (
         <div className="space-y-6">
+          <div className="flex justify-end">
+            <div className="flex gap-1 rounded-lg border border-border p-0.5 text-xs">
+              {(["all", "run"] as const).map(m => (
+                <button key={m} onClick={() => setSportMode(m)}
+                  className={cn("px-3 py-1 rounded-md transition-colors",
+                    sportMode === m ? "bg-accent/10 text-accent" : "text-muted hover:text-primary"
+                  )}>
+                  {m === "all" ? "Alla idrotter" : "Löpning"}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <OverviewCard
               label="This week"

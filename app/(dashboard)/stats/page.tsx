@@ -55,14 +55,25 @@ export default async function StatsPage() {
   const lyMonthEnd   = new Date(lyMonthStart.getTime() + (now.getTime() - monthStart.getTime()));
   const lyYtdEnd     = new Date(lyYtdStart.getTime() + (now.getTime() - yearStart.getTime()));
 
-  const agg = (gte: Date, lte?: Date) => prisma.activity.aggregate({
-    where: { userId, startDate: { gte, ...(lte ? { lte } : {}) } },
+  const RUN_TYPES = { in: ["Run", "TrailRun", "VirtualRun"] };
+  const agg = (gte: Date, lte?: Date, runOnly = false) => prisma.activity.aggregate({
+    where: {
+      userId,
+      startDate: { gte, ...(lte ? { lte } : {}) },
+      ...(runOnly ? { sportType: RUN_TYPES } : {}),
+    },
     _sum: { distance: true, movingTime: true }, _count: true,
   });
 
-  const [wkAgg, moAgg, ytdAgg, lyWkAgg, lyMoAgg, lyYtdAgg, totalCount] = await Promise.all([
+  const [
+    wkAgg, moAgg, ytdAgg, lyWkAgg, lyMoAgg, lyYtdAgg,
+    runWkAgg, runMoAgg, runYtdAgg, runLyWkAgg, runLyMoAgg, runLyYtdAgg,
+    totalCount,
+  ] = await Promise.all([
     agg(weekStart), agg(monthStart), agg(yearStart),
     agg(lyWeekStart, lyWeekEnd), agg(lyMonthStart, lyMonthEnd), agg(lyYtdStart, lyYtdEnd),
+    agg(weekStart, undefined, true), agg(monthStart, undefined, true), agg(yearStart, undefined, true),
+    agg(lyWeekStart, lyWeekEnd, true), agg(lyMonthStart, lyMonthEnd, true), agg(lyYtdStart, lyYtdEnd, true),
     prisma.activity.count({ where: { userId } }),
   ]);
 
@@ -75,6 +86,10 @@ export default async function StatsPage() {
   const overview = {
     thisWeek: toSum(wkAgg), thisMonth: toSum(moAgg), ytd: toSum(ytdAgg),
     lyWeek: toSum(lyWkAgg), lyMonth: toSum(lyMoAgg), lyYtd: toSum(lyYtdAgg),
+  };
+  const overviewRun = {
+    thisWeek: toSum(runWkAgg), thisMonth: toSum(runMoAgg), ytd: toSum(runYtdAgg),
+    lyWeek: toSum(runLyWkAgg), lyMonth: toSum(runLyMoAgg), lyYtd: toSum(runLyYtdAgg),
   };
 
   // ── Check if we can use FitnessCache for expensive computations ─────────
@@ -130,7 +145,7 @@ export default async function StatsPage() {
     const loadCurve = fullCurve.slice(-112); // last 16 weeks for display
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-      zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr);
+      zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr, null, overviewRun);
   }
 
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
@@ -246,13 +261,15 @@ export default async function StatsPage() {
   );
 
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr, statZones);
+    zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr, statZones, overviewRun);
 }
 
 // Shared render — used by both fast and slow paths
+type OverviewData = { thisWeek: { km: number; timeSec: number; count: number }; thisMonth: { km: number; timeSec: number; count: number }; ytd: { km: number; timeSec: number; count: number }; lyWeek: { km: number; timeSec: number; count: number }; lyMonth: { km: number; timeSec: number; count: number }; lyYtd: { km: number; timeSec: number; count: number } };
+
 function renderStats(
   totalCount: number,
-  overview: ReturnType<typeof buildOverview>,
+  overview: OverviewData,
   sparklines: number[],
   weeklyVolumes: Record<string, Record<string, { km: number; timeSec: number }>>,
   loadCurve: import("@/lib/fitness/training-load").DailyLoad[],
@@ -265,6 +282,7 @@ function renderStats(
   polarisation: { z1Pct: number; z2Pct: number; z3Pct: number } | null,
   acwr: number | null,
   statZones?: import("@/lib/fitness/zones").StatisticalZoneResult | null,
+  overviewRun?: OverviewData,
 ) {
   return (
     <div className="space-y-2">
@@ -287,6 +305,7 @@ function renderStats(
         polarisation={polarisation}
         acwr={acwr}
         statZones={statZones ?? null}
+        overviewRun={overviewRun ?? overview}
       />
     </div>
   );
