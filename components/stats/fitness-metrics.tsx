@@ -9,17 +9,20 @@ import type { VO2maxEstimate } from "@/lib/fitness/vo2max";
 import type { DailyLoad } from "@/lib/fitness/training-load";
 import { tsbLabel } from "@/lib/fitness/training-load";
 
-interface RacePred { label: string; meters: number; peak: number; today: number }
+interface RacePred { label: string; meters: number; peak: number; today: number; riegel: number | null; rangeLo: number; rangeHi: number }
 
 interface Props {
   vo2max: VO2maxEstimate;
   paceZones: PaceZones;
   todayLoad: DailyLoad;
   predictions: RacePred[];
+  acwr: number | null;
 }
 
-export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions }: Props) {
+export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions, acwr }: Props) {
   const form = tsbLabel(todayLoad.tsb);
+  const acwrColor = !acwr ? "#94A3B8" : acwr > 1.5 ? "#F87171" : acwr > 1.3 ? "#FBBF24" : "#6EE7B7";
+  const acwrLabel = !acwr ? "—" : acwr > 1.5 ? "Skaderisk" : acwr > 1.3 ? "Hög belastning" : acwr >= 0.8 ? "Grön zon" : "För låg belastning";
 
   return (
     <div className="space-y-6">
@@ -47,6 +50,27 @@ export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions }: Pr
           tip={tooltips.tsb}
         />
       </div>
+
+      {/* ACWR card */}
+      {acwr !== null && (
+        <div className="rounded-xl border border-border p-4 flex items-center gap-6">
+          <div>
+            <p className="text-xs font-medium text-muted mb-1">ACWR — Belastningskvot (7d/28d)</p>
+            <p className="text-3xl font-semibold font-mono" style={{ color: acwrColor }}>{acwr.toFixed(2)}</p>
+            <p className="text-xs font-medium mt-1" style={{ color: acwrColor }}>{acwrLabel}</p>
+          </div>
+          <div className="flex-1">
+            {/* Simple bar */}
+            <div className="relative h-3 rounded-full bg-surface-2 overflow-hidden">
+              <div className="absolute h-full rounded-full" style={{ width: `${Math.min(acwr / 2 * 100, 100)}%`, backgroundColor: acwrColor }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-muted mt-1">
+              <span>0.8</span><span className="text-accent">1.0</span><span className="text-warning">1.3</span><span className="text-error">1.5+</span>
+            </div>
+            <p className="text-xs text-muted mt-1">Säker zon: 0.8–1.3. Över 1.5 = förhöjd skaderisk.</p>
+          </div>
+        </div>
+      )}
 
       {/* Training paces */}
       <div>
@@ -83,21 +107,29 @@ export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions }: Pr
 
       {/* Race predictions */}
       <div>
-        <h3 className="text-sm font-semibold text-primary mb-3">Race Time Predictions</h3>
+        <h3 className="text-sm font-semibold text-primary mb-3">Tävlingsprediktion</h3>
         <div className="rounded-xl border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Distance</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Peak fitness</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Today (TSB {todayLoad.tsb > 0 ? "+" : ""}{todayLoad.tsb.toFixed(0)})</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Distans</th>
+                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">VDOT (toppform)</th>
+                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted hidden sm:table-cell">Riegel (från PB)</th>
+                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Idag (TSB {todayLoad.tsb > 0 ? "+" : ""}{todayLoad.tsb.toFixed(0)})</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {predictions.map(p => (
                 <tr key={p.label} className="hover:bg-surface-2 transition-colors">
                   <td className="px-4 py-2.5 font-medium text-primary">{p.label}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-primary">{secToTimeStr(p.peak)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-primary">
+                    {secToTimeStr(p.peak)}
+                    <span className="text-muted text-[10px] ml-1 hidden sm:inline">±{secToTimeStr(Math.round((p.rangeHi - p.rangeLo) / 2))}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-mono text-muted hidden sm:table-cell">
+                    {p.riegel ? secToTimeStr(p.riegel) : "—"}
+                    {p.meters >= 42000 && p.riegel && <span className="text-[10px] ml-1 text-warning">+8 min</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right font-mono text-muted">{secToTimeStr(p.today)}</td>
                 </tr>
               ))}
@@ -105,7 +137,7 @@ export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions }: Pr
           </table>
         </div>
         <p className="text-xs text-muted mt-2">
-          Peak fitness assumes full taper (TSB +15). Today&apos;s column reflects current fatigue.
+          VDOT från Daniels-formeln · Riegel från bästa PB (T₂ = T₁ × (D₂/D₁)¹·⁰⁶) · Marathon +8 min buffer rekommenderas
         </p>
       </div>
     </div>

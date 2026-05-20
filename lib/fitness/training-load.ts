@@ -91,6 +91,24 @@ export function currentCTL(curve: DailyLoad[]): number {
   return curve.length > 0 ? curve[curve.length - 1].ctl : 0;
 }
 
+/** Acute:Chronic Workload Ratio — 7d avg TSS / 28d avg TSS.
+ *  Safe: 0.8–1.3 | Caution: 1.3–1.5 | Risk: > 1.5
+ */
+export function computeACWR(dailyTSS: Map<string, number>, today: Date): number | null {
+  let acute = 0, chronic = 0, chronCount = 0;
+  for (let i = 0; i < 28; i++) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    const tss = dailyTSS.get(key) ?? 0;
+    if (i < 7) acute += tss;
+    chronic += tss; chronCount++;
+  }
+  const acuteAvg = acute / 7;
+  const chronicAvg = chronic / chronCount;
+  if (chronicAvg < 1) return null;
+  return Math.round((acuteAvg / chronicAvg) * 100) / 100;
+}
+
 // Classify TSB into a form state label.
 export function tsbLabel(tsb: number): { label: string; color: string } {
   if (tsb > 25)  return { label: "Very fresh",   color: "#38BDF8" };

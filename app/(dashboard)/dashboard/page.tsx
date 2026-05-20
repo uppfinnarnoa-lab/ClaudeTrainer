@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db/prisma";
 import { startOfWeek, startOfMonth, startOfYear, subDays } from "date-fns";
 import { generateInsights } from "@/lib/fitness/insights";
 import { formatDuration } from "@/lib/utils";
-import { buildLoadCurve, computeTSS } from "@/lib/fitness/training-load";
+import { buildLoadCurve, computeTSS, computeACWR } from "@/lib/fitness/training-load";
 import { format } from "date-fns";
 
 function localDateStr(d: Date): string {
@@ -74,6 +74,7 @@ export default async function DashboardPage() {
   }
   const loadCurve = buildLoadCurve(tssMap, subDays(now, 42), now);
   const todayLoad = loadCurve.at(-1) ?? { ctl: 0, atl: 0, tsb: 0 };
+  const acwr = computeACWR(tssMap, now);
 
   const avgWeekKm4w = prev4w.km / 1000 / 4;
 
@@ -133,6 +134,11 @@ export default async function DashboardPage() {
         />
       </div>
 
+      {/* ACWR load gauge */}
+      {acwr !== null && (
+        <ACWRCard acwr={acwr} />
+      )}
+
       {/* Insights */}
       {insights.length > 0 && (
         <div className="space-y-2">
@@ -180,6 +186,30 @@ export default async function DashboardPage() {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ACWRCard({ acwr }: { acwr: number }) {
+  const color = acwr > 1.5 ? "#F87171" : acwr > 1.3 ? "#FBBF24" : "#6EE7B7";
+  const label = acwr > 1.5 ? "Skaderisk — ta det lugnt" : acwr > 1.3 ? "Hög belastning — se upp" : acwr >= 0.8 ? "Grön zon — bra balans" : "Låg belastning";
+  const pct = Math.min(acwr / 2, 1) * 100;
+  return (
+    <div className="rounded-xl bg-surface border border-border p-4 flex items-center gap-6">
+      <div className="shrink-0">
+        <p className="text-xs font-medium text-muted uppercase tracking-wide mb-1">ACWR — Belastningskvot</p>
+        <p className="text-3xl font-semibold font-mono" style={{ color }}>{acwr.toFixed(2)}</p>
+        <p className="text-xs font-medium mt-0.5" style={{ color }}>{label}</p>
+      </div>
+      <div className="flex-1">
+        <div className="relative h-2.5 rounded-full bg-surface-2 overflow-hidden">
+          <div className="absolute h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+        </div>
+        <div className="flex justify-between text-[10px] text-muted mt-1 px-0.5">
+          <span>0</span><span>0.8</span><span>1.0</span><span>1.3</span><span>1.5</span><span>2.0</span>
+        </div>
+        <p className="text-xs text-muted mt-1">Säker zon 0.8–1.3 · Källa: 7-dagars / 28-dagars snittbelastning</p>
+      </div>
     </div>
   );
 }

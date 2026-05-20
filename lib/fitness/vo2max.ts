@@ -62,6 +62,22 @@ export function tsbAdjustedRaceTime(baseTimeSec: number, tsb: number): number {
   return Math.round(baseTimeSec * (1 + adj));
 }
 
+/** Riegel formula: T2 = T1 × (D2/D1)^exponent
+ *  exponent: 1.04 advanced, 1.06 standard, 1.08 beginners
+ */
+export function riegelPredict(t1Sec: number, d1M: number, d2M: number, exponent = 1.06): number {
+  return Math.round(t1Sec * Math.pow(d2M / d1M, exponent));
+}
+
+/** ±% confidence interval based on empirical error margins */
+export function predictionRange(predictedSec: number, distM: number): { lo: number; hi: number } {
+  const pct = distM >= 42000 ? 0.06 : distM >= 21000 ? 0.04 : distM >= 10000 ? 0.03 : 0.025;
+  return {
+    lo: Math.round(predictedSec * (1 - pct)),
+    hi: Math.round(predictedSec * (1 + pct)),
+  };
+}
+
 // ── HR-based models ───────────────────────────────────────────────────────
 
 /** Uth-Sørensen-Overgaard-Pedersen (2003): VO2max = 15 × HRmax/HRrest */

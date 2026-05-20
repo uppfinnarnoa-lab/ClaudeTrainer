@@ -17,7 +17,8 @@ import type { VO2maxEstimate } from "@/lib/fitness/vo2max";
 import { cn } from "@/lib/utils";
 
 interface SumData { km: number; timeSec: number; count: number }
-interface RacePred { label: string; meters: number; peak: number; today: number }
+interface RacePred { label: string; meters: number; peak: number; today: number; riegel: number | null; rangeLo: number; rangeHi: number }
+interface Polarisation { z1Pct: number; z2Pct: number; z3Pct: number }
 
 interface Props {
   overview: {
@@ -34,6 +35,8 @@ interface Props {
   vo2max: VO2maxEstimate;
   paceZones: PaceZones;
   predictions: RacePred[];
+  polarisation: Polarisation | null;
+  acwr: number | null;
 }
 
 function pct(curr: number, prev: number) {
@@ -46,7 +49,7 @@ type Section = (typeof SECTIONS)[number];
 
 export function StatsClient(props: Props) {
   const { overview: o, sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds } = props;
+    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -174,6 +177,9 @@ export function StatsClient(props: Props) {
             <HRZonesChart zoneSeconds={zoneSeconds} />
           </SectionCard>
 
+          {/* Polarisation score (Seiler 80/20) */}
+          {polarisation && <PolarisationCard pol={polarisation} />}
+
           {/* HR zone table with LT/AT boundaries */}
           <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} />
         </div>
@@ -181,7 +187,7 @@ export function StatsClient(props: Props) {
 
       {/* ── Fitness ── */}
       {section === "Fitness" && (
-        <FitnessMetrics vo2max={vo2max} paceZones={paceZones} todayLoad={todayLoad} predictions={predictions} />
+        <FitnessMetrics vo2max={vo2max} paceZones={paceZones} todayLoad={todayLoad} predictions={predictions} acwr={acwr} />
       )}
     </div>
   );
@@ -378,6 +384,37 @@ function HRZoneTable({ hrZones, ltBounds }: {
           <p className="text-xs text-muted mt-0.5">Recommended AT training: <span className="font-mono text-accent">{ltBounds.atTrainingRange[0]}–{ltBounds.atTrainingRange[1]} bpm</span></p>
           <p className="text-xs text-muted mt-0.5">Examples: long runs, distans, marathon pace</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PolarisationCard({ pol }: { pol: { z1Pct: number; z2Pct: number; z3Pct: number } }) {
+  const { z1Pct, z2Pct, z3Pct } = pol;
+  const score = Math.max(0, Math.round(100 - Math.abs(z1Pct - 80) * 0.8 - z2Pct * 1.5));
+  const scoreColor = score >= 75 ? "#6EE7B7" : score >= 50 ? "#FBBF24" : "#F87171";
+  const msg = z2Pct > 25
+    ? "Mycket tid i tempozonen — risk för 'skräpmil'. Ersätt tempopass med lätta distanspass."
+    : z1Pct >= 75 ? "Bra polarisering — håll kvar strukturen." : "Öka andelen lättpass för bättre polarisering.";
+  return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between">
+        <p className="text-sm font-semibold text-primary">Polarisering — Seiler 80/20 (senaste 12 veckorna)</p>
+        <span className="text-xs font-semibold font-mono" style={{ color: scoreColor }}>Poäng {score}/100</span>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex rounded-full overflow-hidden h-4 bg-surface-2">
+          <div style={{ width: `${z1Pct}%`, backgroundColor: "#6EE7B7" }} />
+          <div style={{ width: `${z2Pct}%`, backgroundColor: "#FBBF24" }} />
+          <div style={{ width: `${z3Pct}%`, backgroundColor: "#EF4444" }} />
+        </div>
+        <div className="flex flex-wrap gap-5 text-xs">
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#6EE7B7", display: "inline-block" }} />Z1 lätt {z1Pct}%</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#FBBF24", display: "inline-block" }} />Z2 tempo {z2Pct}%</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#EF4444", display: "inline-block" }} />Z3 hårt {z3Pct}%</span>
+          <span className="ml-auto text-muted">Mål: 80 · 5–10 · 15</span>
+        </div>
+        <p className="text-xs text-muted">{msg}</p>
       </div>
     </div>
   );

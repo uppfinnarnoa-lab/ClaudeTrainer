@@ -2,8 +2,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { StatsClient } from "./stats-client";
 import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries } from "@/lib/fitness/zones";
-import { computeTSS, buildLoadCurve } from "@/lib/fitness/training-load";
-import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime } from "@/lib/fitness/vo2max";
+import { computeTSS, buildLoadCurve, computeACWR } from "@/lib/fitness/training-load";
+import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace } from "@/lib/fitness/vo2max";
 import { RACE_DISTANCES } from "@/lib/fitness/paces";
 import { subDays, format, startOfWeek, startOfYear } from "date-fns";
 
@@ -154,12 +154,40 @@ export default async function StatsPage() {
     return Object.values(weeklyVolumes[key] ?? {}).reduce((s, v) => s + v.km, 0);
   });
 
-  // Race predictions
-  const predictions = RACE_DISTANCES.map(({ label, meters }) => ({
-    label, meters,
-    peak: predictRaceTime(vo2max.vdot, meters),
-    today: tsbAdjustedRaceTime(predictRaceTime(vo2max.vdot, meters), todayLoad.tsb),
-  }));
+  // Race predictions — VDOT + Riegel from best PB
+  // Find best anchor PB: prefer HM > 10K > 5K > other (best vdot equivalent)
+  const anchorPB = racePBs
+    .filter(p => p.timeSec > 60 && p.distanceM >= 1500)
+    .reduce<{ distanceM: number; timeSec: number } | null>((best, p) => {
+      if (!best) return p;
+      return vdotFromRace(p.distanceM, p.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? p : best;
+    }, null);
+
+  const predictions = RACE_DISTANCES.map(({ label, meters }) => {
+    const peak = predictRaceTime(vo2max.vdot, meters);
+    const riegel = anchorPB ? riegelPredict(anchorPB.timeSec, anchorPB.distanceM, meters) : null;
+    const range = predictionRange(peak, meters);
+    return { label, meters, peak, today: tsbAdjustedRaceTime(peak, todayLoad.tsb), riegel, rangeLo: range.lo, rangeHi: range.hi };
+  });
+
+  // Polarisation: classify activities (last 12 weeks) into 3 Seiler zones by avgHR
+  const lt = ltBoundaries(hrZones);
+  let polZ1sec = 0, polZ2sec = 0, polZ3sec = 0;
+  for (const a of activities.filter((x: A) => x.startDate >= twelveWeeksAgo && x.averageHeartrate)) {
+    const hr = a.averageHeartrate!;
+    if (hr < lt.lt1)       polZ1sec += a.movingTime;
+    else if (hr < lt.lt2)  polZ2sec += a.movingTime;
+    else                   polZ3sec += a.movingTime;
+  }
+  const polTotal = polZ1sec + polZ2sec + polZ3sec;
+  const polarisation = polTotal > 0 ? {
+    z1Pct: Math.round(polZ1sec / polTotal * 100),
+    z2Pct: Math.round(polZ2sec / polTotal * 100),
+    z3Pct: Math.round(polZ3sec / polTotal * 100),
+  } : null;
+
+  // ACWR
+  const acwr = computeACWR(dailyTSSMap, new Date());
 
   return (
     <div className="space-y-2">
@@ -180,6 +208,8 @@ export default async function StatsPage() {
         vo2max={vo2max}
         paceZones={paceZones}
         predictions={predictions}
+        polarisation={polarisation}
+        acwr={acwr}
       />
     </div>
   );
