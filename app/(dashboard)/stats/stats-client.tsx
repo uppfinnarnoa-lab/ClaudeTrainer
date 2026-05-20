@@ -51,6 +51,7 @@ interface Props {
     activeStreak:    number;
     tempSensitivity: number | null;
   } | null;
+  paceZoneSeconds: Record<string, number>;
 }
 
 function pct(curr: number, prev: number) {
@@ -65,7 +66,7 @@ export function StatsClient(props: Props) {
   const [sportMode, setSportMode] = useState<"all" | "run">("all");
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics } = props;
+    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics, paceZoneSeconds } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -204,6 +205,11 @@ export function StatsClient(props: Props) {
             action={<ZoneCalibrationButton />}>
             <HRZonesChart zoneSeconds={zoneSeconds} />
           </SectionCard>
+
+          {/* Pace zone distribution */}
+          {Object.values(paceZoneSeconds).some(v => v > 0) && (
+            <PaceZoneCard pzs={paceZoneSeconds} paceZones={paceZones} />
+          )}
 
           {/* Statistical zone analysis from bucketed HR-pace data */}
           {statZones && <StatisticalZonesCard sz={statZones} />}
@@ -409,6 +415,51 @@ function LoadCard({ label, value, tip, color, sub }: { label: string; value: str
   );
 }
 
+function PaceZoneCard({ pzs, paceZones }: { pzs: Record<string, number>; paceZones: PaceZones }) {
+  const totalSec = Object.values(pzs).reduce((s, v) => s + v, 0);
+  if (totalSec === 0) return null;
+  const ZONES = [
+    { key: "easy",       label: "Easy",       color: "#7DD3FC", range: paceZones.easy },
+    { key: "marathon",   label: "Marathon",   color: "#6EE7B7", range: paceZones.marathon },
+    { key: "threshold",  label: "Threshold",  color: "#F472B6", range: paceZones.threshold },
+    { key: "interval",   label: "Interval",   color: "#818CF8", range: paceZones.interval },
+    { key: "repetition", label: "Repetition", color: "#3B82F6", range: paceZones.repetition },
+  ];
+  return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface-2">
+        <p className="text-sm font-semibold text-primary">Pace zone distribution (last 12 weeks · running)</p>
+      </div>
+      <div className="p-4 space-y-3">
+        {/* Stacked bar */}
+        <div className="flex rounded-full overflow-hidden h-4">
+          {ZONES.map(z => {
+            const w = totalSec > 0 ? ((pzs[z.key] ?? 0) / totalSec) * 100 : 0;
+            return w > 0 ? <div key={z.key} style={{ width: `${w}%`, backgroundColor: z.color }} title={`${z.label}: ${w.toFixed(0)}%`} /> : null;
+          })}
+        </div>
+        {/* Legend rows */}
+        {ZONES.map(z => {
+          const sec = pzs[z.key] ?? 0;
+          const p = totalSec > 0 ? Math.round((sec / totalSec) * 100) : 0;
+          const [lo, hi] = z.range;
+          return (
+            <div key={z.key} className="flex items-center gap-3 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: z.color }} />
+              <span className="font-medium text-primary w-20">{z.label}</span>
+              <span className="font-mono text-muted text-[10px]">{secPerKmToPaceStr(hi)}–{secPerKmToPaceStr(lo)}/km</span>
+              <div className="flex-1 h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${p}%`, backgroundColor: z.color }} />
+              </div>
+              <span className="font-mono text-primary w-8 text-right">{p}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ZoneCalibrationButton() {
   const [loading, setLoading] = useState<"algo" | "ai" | null>(null);
   const [result, setResult] = useState<{ insights?: string | null; maxHR?: number; vo2max?: number; aiApplied?: boolean } | null>(null);
@@ -520,19 +571,19 @@ function HRZoneTable({ hrZones, ltBounds }: {
         </tbody>
       </table>
 
-      {/* LT / AT section */}
+      {/* LT2 / LT1 section */}
       <div className="border-t border-border bg-surface-2 px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">Lactate Threshold (LT2)</p>
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT2 — Lactate Threshold</p>
           <p className="font-mono font-semibold text-primary">{ltBounds.lt2} bpm</p>
-          <p className="text-xs text-muted mt-0.5">Recommended LT training: <span className="font-mono text-warning">{ltBounds.ltTrainingRange[0]}–{ltBounds.ltTrainingRange[1]} bpm</span></p>
-          <p className="text-xs text-muted mt-0.5">Examples: threshold intervals (4×10 min), tempo runs</p>
+          <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-warning">{ltBounds.ltTrainingRange[0]}–{ltBounds.ltTrainingRange[1]} bpm</span></p>
+          <p className="text-xs text-muted mt-0.5">Threshold intervals (4×10 min), tempo runs</p>
         </div>
         <div>
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">Aerobic Threshold (LT1)</p>
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT1 — Aerobic Threshold</p>
           <p className="font-mono font-semibold text-primary">{ltBounds.lt1} bpm</p>
-          <p className="text-xs text-muted mt-0.5">Recommended AT training: <span className="font-mono text-accent">{ltBounds.atTrainingRange[0]}–{ltBounds.atTrainingRange[1]} bpm</span></p>
-          <p className="text-xs text-muted mt-0.5">Examples: long runs, distans, marathon pace</p>
+          <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-accent">{ltBounds.atTrainingRange[0]}–{ltBounds.atTrainingRange[1]} bpm</span></p>
+          <p className="text-xs text-muted mt-0.5">Long runs, distans, marathon pace</p>
         </div>
       </div>
     </div>
@@ -544,13 +595,13 @@ function PolarisationCard({ pol }: { pol: { z1Pct: number; z2Pct: number; z3Pct:
   const score = Math.max(0, Math.round(100 - Math.abs(z1Pct - 80) * 0.8 - z2Pct * 1.5));
   const scoreColor = score >= 75 ? "#6EE7B7" : score >= 50 ? "#FBBF24" : "#F87171";
   const msg = z2Pct > 25
-    ? "Mycket tid i tempozonen — risk för 'skräpmil'. Ersätt tempopass med lätta distanspass."
-    : z1Pct >= 75 ? "Bra polarisering — håll kvar strukturen." : "Öka andelen lättpass för bättre polarisering.";
+    ? "Too much time in the tempo zone — risk of 'junk miles'. Replace with easy runs."
+    : z1Pct >= 75 ? "Good polarisation — maintain this structure." : "Increase easy volume for better polarisation.";
   return (
     <div className="rounded-xl border border-border overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between">
-        <p className="text-sm font-semibold text-primary">Polarisering — Seiler 80/20 (senaste 12 veckorna)</p>
-        <span className="text-xs font-semibold font-mono" style={{ color: scoreColor }}>Poäng {score}/100</span>
+        <p className="text-sm font-semibold text-primary">Polarisation — Seiler 80/20 (last 12 weeks)</p>
+        <span className="text-xs font-semibold font-mono" style={{ color: scoreColor }}>Score {score}/100</span>
       </div>
       <div className="p-4 space-y-3">
         <div className="flex rounded-full overflow-hidden h-4 bg-surface-2">
@@ -559,10 +610,10 @@ function PolarisationCard({ pol }: { pol: { z1Pct: number; z2Pct: number; z3Pct:
           <div style={{ width: `${z3Pct}%`, backgroundColor: "#EF4444" }} />
         </div>
         <div className="flex flex-wrap gap-5 text-xs">
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#6EE7B7", display: "inline-block" }} />Z1 lätt {z1Pct}%</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#6EE7B7", display: "inline-block" }} />Z1 easy {z1Pct}%</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#FBBF24", display: "inline-block" }} />Z2 tempo {z2Pct}%</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#EF4444", display: "inline-block" }} />Z3 hårt {z3Pct}%</span>
-          <span className="ml-auto text-muted">Mål: 80 · 5–10 · 15</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: "#EF4444", display: "inline-block" }} />Z3 hard {z3Pct}%</span>
+          <span className="ml-auto text-muted">Target: 80 · 5–10 · 15</span>
         </div>
         <p className="text-xs text-muted">{msg}</p>
       </div>

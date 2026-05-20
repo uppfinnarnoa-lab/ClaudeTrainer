@@ -528,10 +528,16 @@ export function estimateVO2max(
   const weightedSum = available.reduce((s, [v, w]) => s + v! * w, 0);
   const mean = weightedSum / totalWeight;
 
-  const clamped = Math.min(Math.max(mean, 25), 90);
+  // Floor: VDOT must never be lower than what the best verified race PB implies.
+  // Otherwise the predictions would be slower than the user's actual times.
+  const bestPBVdot = racePBCandidates.length > 0
+    ? Math.max(...racePBCandidates.map(c => c.v))
+    : 0;
+
+  const clamped = Math.max(Math.min(Math.max(mean, 25), 90), bestPBVdot * 0.99);
   const breakdown = Object.fromEntries(available.map(([v, , name]) => [name, Math.round(v! * 10) / 10]));
 
-  const primaryMethod = available[0][2]; // highest-weight available method
+  const primaryMethod = available[0][2];
   const methodStr = `${primaryMethod} + ${available.length - 1} models (weighted mean)`;
 
   return {

@@ -145,7 +145,7 @@ export default async function StatsPage() {
     const loadCurve = fullCurve.slice(-112); // last 16 weeks for display
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-      zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr, null, overviewRun);
+      zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr, null, overviewRun, null, {});
   }
 
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
@@ -214,6 +214,17 @@ export default async function StatsPage() {
     const hr = a.averageHeartrate!;
     const z = hr < computedHrZones.z1[1] ? 1 : hr < computedHrZones.z2[1] ? 2 : hr < computedHrZones.z3[1] ? 3 : hr < computedHrZones.z4[1] ? 4 : 5;
     zoneSeconds[`z${z}`] += a.movingTime;
+  }
+
+  // Pace zone seconds (last 12 weeks, running only)
+  const paceZoneSeconds: Record<string, number> = { easy: 0, marathon: 0, threshold: 0, interval: 0, repetition: 0 };
+  for (const a of activities.filter((x: A) => x.startDate >= twelveWeeksAgo && x.averageSpeed && /run|trail/i.test(x.sportType))) {
+    const pace = 1000 / a.averageSpeed!;
+    if (pace >= paceZones.easy[0])           paceZoneSeconds.easy      += a.movingTime;
+    else if (pace >= paceZones.marathon[0])  paceZoneSeconds.marathon   += a.movingTime;
+    else if (pace >= paceZones.threshold[0]) paceZoneSeconds.threshold  += a.movingTime;
+    else if (pace >= paceZones.interval[0])  paceZoneSeconds.interval   += a.movingTime;
+    else                                     paceZoneSeconds.repetition += a.movingTime;
   }
 
   const sparklines = Array.from({ length: 8 }, (_, i) => {
@@ -352,7 +363,7 @@ export default async function StatsPage() {
 
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr, statZones, overviewRun,
-    { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity });
+    { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds);
 }
 
 // Shared render — used by both fast and slow paths
@@ -384,6 +395,7 @@ function renderStats(
   statZones?: import("@/lib/fitness/zones").StatisticalZoneResult | null,
   overviewRun?: OverviewData,
   analytics?: Analytics1A | null,
+  paceZoneSeconds?: Record<string, number>,
 ) {
   return (
     <div className="space-y-2">
@@ -408,6 +420,7 @@ function renderStats(
         statZones={statZones ?? null}
         overviewRun={overviewRun ?? overview}
         analytics={analytics ?? null}
+        paceZoneSeconds={paceZoneSeconds ?? {}}
       />
     </div>
   );

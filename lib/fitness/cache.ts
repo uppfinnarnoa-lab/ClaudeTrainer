@@ -286,18 +286,39 @@ export async function updateHRZones(userId: string) {
   );
   const paceZones = buildPaceZones(vo2maxResult.vdot);
 
+  // Recompute zone distribution with the newly calibrated zones so charts update immediately
+  const twelveWeeksAgo = subDays(new Date(), 84);
+  type ZoneMap2 = { z1:[number,number]; z2:[number,number]; z3:[number,number]; z4:[number,number]; z5:[number,number] };
+  const hz2 = zonesJson as ZoneMap2;
+  const zoneSecondsJson = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 } as Record<string, number>;
+  let polZ1 = 0, polZ2 = 0, polZ3 = 0;
+  const lt1hr2 = hz2.z2[1], lt2hr2 = hz2.z4[0];
+  for (const a of activities as Act[]) {
+    if (a.startDate < twelveWeeksAgo || !a.averageHeartrate) continue;
+    const hr = a.averageHeartrate;
+    const z = hr < hz2.z1[1] ? 1 : hr < hz2.z2[1] ? 2 : hr < hz2.z3[1] ? 3 : hr < hz2.z4[1] ? 4 : 5;
+    zoneSecondsJson[`z${z}`] = (zoneSecondsJson[`z${z}`] ?? 0) + a.movingTime;
+    if (hr < lt1hr2) polZ1 += a.movingTime;
+    else if (hr < lt2hr2) polZ2 += a.movingTime;
+    else polZ3 += a.movingTime;
+  }
+  const polTotal2 = polZ1 + polZ2 + polZ3;
+  const polarisationJson = polTotal2 > 0
+    ? { z1Pct: Math.round(polZ1/polTotal2*100), z2Pct: Math.round(polZ2/polTotal2*100), z3Pct: Math.round(polZ3/polTotal2*100) }
+    : null;
+
   await prisma.fitnessCache.upsert({
     where: { userId },
     create: {
       userId, maxHR, restHR, thresholdHR, zones: zonesJson,
       vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot,
       confidence: vo2maxResult.confidence, method: vo2maxResult.method,
-      paces: pacesJson(paceZones),
+      paces: pacesJson(paceZones), zoneSecondsJson, polarisationJson: polarisationJson ?? undefined,
     },
     update: { maxHR, restHR, thresholdHR, zones: zonesJson,
       vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot,
       confidence: vo2maxResult.confidence, method: vo2maxResult.method,
-      paces: pacesJson(paceZones),
+      paces: pacesJson(paceZones), zoneSecondsJson, polarisationJson: polarisationJson ?? undefined,
     },
   });
 
