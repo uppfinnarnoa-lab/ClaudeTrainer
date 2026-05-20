@@ -52,6 +52,8 @@ interface Props {
     tempSensitivity: number | null;
   } | null;
   paceZoneSeconds: Record<string, number>;
+  modelPredictions: Record<string, { label: string; meters: number; peak: number }[]>;
+  modelVdots: Record<string, number>;
 }
 
 function pct(curr: number, prev: number) {
@@ -66,7 +68,8 @@ export function StatsClient(props: Props) {
   const [sportMode, setSportMode] = useState<"all" | "run">("all");
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics, paceZoneSeconds } = props;
+    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics, paceZoneSeconds,
+    modelPredictions, modelVdots } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -225,7 +228,8 @@ export function StatsClient(props: Props) {
       {/* ── Fitness ── */}
       {section === "Fitness" && (
         <div className="space-y-6">
-          <FitnessMetrics vo2max={vo2max} paceZones={paceZones} todayLoad={todayLoad} predictions={predictions} acwr={acwr} />
+          <FitnessMetrics vo2max={vo2max} paceZones={paceZones} todayLoad={todayLoad} predictions={predictions} acwr={acwr}
+            modelPredictions={modelPredictions} modelVdots={modelVdots} />
 
           {/* Analytics 1A: AEI trend + ramp rate + active streak */}
           {analytics && (

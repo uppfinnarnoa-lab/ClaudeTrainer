@@ -145,7 +145,7 @@ export default async function StatsPage() {
     const loadCurve = fullCurve.slice(-112); // last 16 weeks for display
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-      zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr, null, overviewRun, null, {});
+      zoneSeconds, hrZones, vo2max, paceZones, predictions, polarisation, acwr, null, overviewRun, null, {}, {}, {});
   }
 
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
@@ -244,6 +244,25 @@ export default async function StatsPage() {
     const range = predictionRange(peak, meters);
     return { label, meters, peak, today: tsbAdjustedRaceTime(peak, todayLoad.tsb), riegel, rangeLo: range.lo, rangeHi: range.hi };
   });
+
+  // Per-model predictions — lets user see output of each individual model
+  const modelVdots: Record<string, number> = {
+    "Weighted (default)": vo2max.vdot,
+    ...Object.fromEntries(
+      Object.entries(vo2max.breakdown ?? {})
+        .filter(([, v]) => v > 30 && v < 90)
+        .map(([name, v]) => [name, Math.round(v * 10) / 10])
+    ),
+  };
+  const modelPredictions = Object.fromEntries(
+    Object.entries(modelVdots).map(([model, vdot]) => [
+      model,
+      RACE_DISTANCES.map(({ label, meters }) => ({
+        label, meters,
+        peak: predictRaceTime(vdot, meters),
+      })),
+    ])
+  );
 
   const lt = ltBoundaries(computedHrZones);
   let polZ1 = 0, polZ2 = 0, polZ3 = 0;
@@ -363,7 +382,8 @@ export default async function StatsPage() {
 
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr, statZones, overviewRun,
-    { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds);
+    { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
+    modelPredictions, modelVdots);
 }
 
 // Shared render — used by both fast and slow paths
@@ -396,6 +416,8 @@ function renderStats(
   overviewRun?: OverviewData,
   analytics?: Analytics1A | null,
   paceZoneSeconds?: Record<string, number>,
+  modelPredictions?: Record<string, { label: string; meters: number; peak: number }[]>,
+  modelVdots?: Record<string, number>,
 ) {
   return (
     <div className="space-y-2">
@@ -421,6 +443,8 @@ function renderStats(
         overviewRun={overviewRun ?? overview}
         analytics={analytics ?? null}
         paceZoneSeconds={paceZoneSeconds ?? {}}
+        modelPredictions={modelPredictions ?? {}}
+        modelVdots={modelVdots ?? {}}
       />
     </div>
   );

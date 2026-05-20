@@ -1,5 +1,7 @@
 "use client";
 
+"use client";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { MetricTooltip } from "./metric-tooltip";
 import { tooltips } from "@/lib/fitness/tooltips";
@@ -17,10 +19,13 @@ interface Props {
   todayLoad: DailyLoad;
   predictions: RacePred[];
   acwr: number | null;
+  modelPredictions?: Record<string, { label: string; meters: number; peak: number }[]>;
+  modelVdots?: Record<string, number>;
 }
 
-export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions, acwr }: Props) {
+export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions, acwr, modelPredictions, modelVdots }: Props) {
   const form = tsbLabel(todayLoad.tsb);
+  const [selectedModel, setSelectedModel] = useState<string>("Weighted (default)");
   const acwrColor = !acwr ? "#94A3B8" : acwr > 1.5 ? "#F87171" : acwr > 1.3 ? "#FBBF24" : "#6EE7B7";
   const acwrLabel = !acwr ? "—" : acwr > 1.5 ? "Skaderisk" : acwr > 1.3 ? "Hög belastning" : acwr >= 0.8 ? "Grön zon" : "För låg belastning";
 
@@ -107,37 +112,80 @@ export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions, acwr
 
       {/* Race predictions */}
       <div>
-        <h3 className="text-sm font-semibold text-primary mb-3">Tävlingsprediktion</h3>
+        <h3 className="text-sm font-semibold text-primary mb-3">Race Time Predictions</h3>
         <div className="rounded-xl border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-2">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Distans</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">VDOT (toppform)</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted hidden sm:table-cell">Riegel (från PB)</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Idag (TSB {todayLoad.tsb > 0 ? "+" : ""}{todayLoad.tsb.toFixed(0)})</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Distance</th>
+                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">
+                  {selectedModel === "Weighted (default)" ? "VDOT (peak form)" : selectedModel}
+                </th>
+                {selectedModel === "Weighted (default)" && <>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted hidden sm:table-cell">Riegel (from PB)</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted">Today (TSB {todayLoad.tsb > 0 ? "+" : ""}{todayLoad.tsb.toFixed(0)})</th>
+                </>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {predictions.map(p => (
-                <tr key={p.label} className="hover:bg-surface-2 transition-colors">
-                  <td className="px-4 py-2.5 font-medium text-primary">{p.label}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-primary">
-                    {secToTimeStr(p.peak)}
-                    <span className="text-muted text-[10px] ml-1 hidden sm:inline">±{secToTimeStr(Math.round((p.rangeHi - p.rangeLo) / 2))}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-muted hidden sm:table-cell">
-                    {p.riegel ? secToTimeStr(p.riegel) : "—"}
-                    {p.meters >= 42000 && p.riegel && <span className="text-[10px] ml-1 text-warning">+8 min</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-mono text-muted">{secToTimeStr(p.today)}</td>
-                </tr>
-              ))}
+              {selectedModel === "Weighted (default)"
+                ? predictions.map(p => (
+                  <tr key={p.label} className="hover:bg-surface-2 transition-colors">
+                    <td className="px-4 py-2.5 font-medium text-primary">{p.label}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-primary">
+                      {secToTimeStr(p.peak)}
+                      <span className="text-muted text-[10px] ml-1 hidden sm:inline">±{secToTimeStr(Math.round((p.rangeHi - p.rangeLo) / 2))}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-muted hidden sm:table-cell">
+                      {p.riegel ? secToTimeStr(p.riegel) : "—"}
+                      {p.meters >= 42000 && p.riegel && <span className="text-[10px] ml-1 text-warning">+8 min</span>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-mono text-muted">{secToTimeStr(p.today)}</td>
+                  </tr>
+                ))
+                : (modelPredictions?.[selectedModel] ?? []).map(p => (
+                  <tr key={p.label} className="hover:bg-surface-2 transition-colors">
+                    <td className="px-4 py-2.5 font-medium text-primary">{p.label}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-primary">{secToTimeStr(p.peak)}</td>
+                  </tr>
+                ))
+              }
             </tbody>
           </table>
         </div>
+
+        {/* Model selector */}
+        {modelVdots && Object.keys(modelVdots).length > 1 && (
+          <div className="mt-3 rounded-xl border border-border bg-surface-2 p-3 space-y-2">
+            <p className="text-xs font-medium text-muted">Show predictions from:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(modelVdots).map(([model, vdot]) => (
+                <button
+                  key={model}
+                  onClick={() => setSelectedModel(model)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors",
+                    selectedModel === model
+                      ? "border-accent/40 bg-accent/10 text-accent"
+                      : "border-border text-muted hover:text-primary hover:border-border"
+                  )}
+                >
+                  {model}
+                  <span className="ml-1.5 font-mono text-[10px] opacity-70">VDOT {vdot}</span>
+                </button>
+              ))}
+            </div>
+            {selectedModel !== "Weighted (default)" && (
+              <p className="text-[10px] text-muted">
+                Showing raw output from <strong>{selectedModel}</strong> model only — no weighting applied.
+                VDOT {modelVdots[selectedModel]?.toFixed(1)} vs weighted {vo2max.vdot.toFixed(1)}.
+              </p>
+            )}
+          </div>
+        )}
+
         <p className="text-xs text-muted mt-2">
-          VDOT från Daniels-formeln · Riegel från bästa PB (T₂ = T₁ × (D₂/D₁)¹·⁰⁶) · Marathon +8 min buffer rekommenderas
+          Default uses weighted average of all available models · Riegel: T₂ = T₁ × (D₂/D₁)¹·⁰⁶
         </p>
       </div>
     </div>
