@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromRaces, estimateMaxHRFromThreshold } from "@/lib/fitness/zones";
-import { computeTSS, buildLoadCurve } from "@/lib/fitness/training-load";
+import { buildHRZones, buildPaceZones } from "@/lib/fitness/zones";
 import { estimateVO2max, type RacePB } from "@/lib/fitness/vo2max";
 import { secPerKmToPaceStr } from "@/lib/fitness/paces";
 import { tsbLabel } from "@/lib/fitness/training-load";
@@ -32,12 +31,13 @@ async function loadRacePBsForContext(userId: string): Promise<RacePB[]> {
 export async function buildCoachContext(userId: string): Promise<CoachContext> {
   const now = new Date();
 
-  const [profile, activities, garminRecent, plannedWorkouts, missedWorkouts, upcomingRaceWorkouts, racePBs] =
+  const [profile, fitnessCache, activities, garminRecent, plannedWorkouts, missedWorkouts, upcomingRaceWorkouts, racePBs] =
     await Promise.all([
       prisma.athleteProfile.findUnique({ where: { userId } }),
+      prisma.fitnessCache.findUnique({ where: { userId } }),
+      // Only fetch last 90 days — enough for AI context, dramatically faster than 5 years
       prisma.activity.findMany({
-        // 5-year cap: limits AI context window to save costs and processing time
-        where: { userId, startDate: { gte: subDays(now, 5 * 365) } },
+        where: { userId, startDate: { gte: subDays(now, 90) } },
         orderBy: { startDate: "asc" },
         select: {
           sportType: true, startDate: true, name: true, description: true,
@@ -81,45 +81,30 @@ export async function buildCoachContext(userId: string): Promise<CoachContext> {
       loadRacePBsForContext(userId),
     ]);
 
-  // ── HR / zones ──────────────────────────────────────────────────────
-  const maxHRs = (activities as Act[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
-  const raceMaxHRs = (activities as Act[])
-    .filter(a => a.isRace || /tävl|race|lopp|mila|stafett|sic\b|parkrun/i.test(a.name))
-    .flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
-  const observedMax = maxHRs.length > 0 ? Math.max(...maxHRs) : 200;
-  const thresholdHRs = (activities as Act[])
-    .filter(a => a.averageHeartrate && a.averageHeartrate > observedMax * 0.82
-      && a.sportType.toLowerCase().includes("run"))
-    .map(a => a.averageHeartrate!);
-  const maxHR = profile?.maxHeartRate
-    ?? estimateMaxHRFromRaces(raceMaxHRs)
-    ?? estimateMaxHRFromThreshold(thresholdHRs)
-    ?? estimateMaxHR(maxHRs);
-  const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? 50;
+  // ── HR / zones — prefer FitnessCache (avoids recomputing from full history) ──
+  const maxHR = profile?.maxHeartRate ?? fitnessCache?.maxHR ?? 190;
+  const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? fitnessCache?.restHR ?? 50;
   const hrZones = buildHRZones(maxHR, restHR);
   const hrZoneRanges: [number, number][] = [
     hrZones.z1, hrZones.z2, hrZones.z3, hrZones.z4, hrZones.z5,
   ];
 
-  // ── VO2max / CTL / TSB ──────────────────────────────────────────────
-  const vo2maxResult = estimateVO2max(
-    (activities as Act[]).map(a => ({
-      distanceM: a.distance, timeSec: a.movingTime,
-      avgHR: a.averageHeartrate, isRace: a.isRace,
-      sportType: a.sportType, name: a.name, startDate: a.startDate,
-    })),
-    maxHR, restHR, racePBs,
-  );
-  const paceZones = buildPaceZones(vo2maxResult.vdot);
+  // ── VO2max / paces — read from cache (avoid full 5-year recomputation) ──
+  const vdot = fitnessCache?.vdot ?? 45;
+  const vo2maxResult = fitnessCache
+    ? { value: fitnessCache.vo2max, vdot, confidence: fitnessCache.confidence as "high"|"medium"|"low", method: fitnessCache.method }
+    : estimateVO2max(
+        (activities as Act[]).map(a => ({
+          distanceM: a.distance, timeSec: a.movingTime,
+          avgHR: a.averageHeartrate, isRace: a.isRace,
+          sportType: a.sportType, name: a.name, startDate: a.startDate,
+        })),
+        maxHR, restHR, racePBs,
+      );
+  const paceZones = buildPaceZones(vdot);
 
-  const dailyTSS = new Map<string, number>();
-  for (const a of activities as Act[]) {
-    const key = format(a.startDate, "yyyy-MM-dd");
-    const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR, restHR });
-    dailyTSS.set(key, (dailyTSS.get(key) ?? 0) + tss);
-  }
-  const loadCurve = buildLoadCurve(dailyTSS, subDays(now, 365), now);
-  const todayLoad = loadCurve.at(-1) ?? { atl: 0, ctl: 0, tsb: 0 };
+  // ── ATL/CTL/TSB — read from cache (avoids 365-day TSS computation) ──────
+  const todayLoad = { atl: fitnessCache?.atl ?? 0, ctl: fitnessCache?.ctl ?? 0, tsb: fitnessCache?.tsb ?? 0 };
   const formLabel = tsbLabel(todayLoad.tsb).label;
 
   // ── Paces formatted ────────────────────────────────────────────────

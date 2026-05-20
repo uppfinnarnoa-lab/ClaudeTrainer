@@ -150,6 +150,7 @@ model Activity {
   @@index([userId, startDate])
   @@index([userId, sportType])
   @@index([userId, isRace])
+  @@index([userId, startDate, sportType])  // composite for filtered stats queries
 }
 
 model SportCategory {
@@ -308,6 +309,8 @@ model Message {
   estimatedCostUsd Float?
   modelUsed      String?
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
 
 model AISettings {
@@ -340,6 +343,15 @@ model FitnessCache {
   thresholdHR  Int?
   zones        Json     // { z1: [lo,hi], z2: [lo,hi], z3, z4, z5 }
   paces        Json     // { easy, marathon, threshold, interval, repetition }
+  // Performance cache — updated after every Strava sync
+  atl              Float?   // Acute Training Load (7-day)
+  ctl              Float?   // Chronic Training Load (42-day)
+  tsb              Float?   // Training Stress Balance = CTL - ATL
+  acwr             Float?   // Acute:Chronic Workload Ratio
+  weeklyVolumeJson Json?    // { weekKey: { sport: { km, timeSec } } } last 16 weeks
+  zoneSecondsJson  Json?    // { z1, z2, z3, z4, z5 } seconds last 12 weeks
+  polarisationJson Json?    // { z1Pct, z2Pct, z3Pct } Seiler 3-zone
+  predictionsJson  Json?    // [{ label, meters, peak, today, riegel, rangeLo, rangeHi }]
   computedAt   DateTime @default(now()) @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

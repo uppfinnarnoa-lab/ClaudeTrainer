@@ -2,8 +2,10 @@
  * Fitness metrics cache — two separate update paths:
  *
  * AUTO (after every Strava sync):
- *   updateVO2maxAndPaces() — VO2max, VDOT, pace zones
- *   These use broad data and update continuously.
+ *   updateVO2maxAndPaces() — computes and caches everything:
+ *   VO2max, VDOT, paces, ATL/CTL/TSB, ACWR, weekly volumes,
+ *   zone seconds, polarisation, race predictions.
+ *   Stats page reads from this cache instead of recomputing on every load.
  *
  * MANUAL (button press only):
  *   updateHRZones() — maxHR, restHR, thresholdHR, HR zones
@@ -12,8 +14,10 @@
 
 import { prisma } from "@/lib/db/prisma";
 import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces } from "./zones";
-import { estimateVO2max, buildHRPaceRegressionParams, type RacePB } from "./vo2max";
-import { subDays } from "date-fns";
+import { estimateVO2max, buildHRPaceRegressionParams, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace, type RacePB } from "./vo2max";
+import { computeTSS, buildLoadCurve, computeACWR } from "./training-load";
+import { RACE_DISTANCES } from "./paces";
+import { subDays, format, startOfWeek } from "date-fns";
 
 type Act = {
   sportType: string; name: string; distance: number; movingTime: number;
@@ -25,6 +29,7 @@ type Act = {
 async function loadActivities(userId: string) {
   return prisma.activity.findMany({
     where: { userId, startDate: { gte: subDays(new Date(), 5 * 365) } },
+    orderBy: { startDate: "asc" },
     select: {
       sportType: true, name: true, distance: true, movingTime: true,
       averageHeartrate: true, maxHeartrate: true,
@@ -42,65 +47,145 @@ async function loadRacePBs(userId: string): Promise<RacePB[]> {
   const bestPerDist = new Map<number, RacePB>();
   for (const r of records) {
     const d = Math.round(r.distanceM);
-    if (!bestPerDist.has(d) || bestPerDist.get(d)!.timeSec > r.time) {
+    if (!bestPerDist.has(d) || bestPerDist.get(d)!.timeSec > r.time)
       bestPerDist.set(d, { distanceM: r.distanceM, timeSec: r.time, date: r.date });
-    }
   }
   return [...bestPerDist.values()];
 }
 
-// ── AUTO path: VO2max + paces (runs after every sync) ─────────────────────
+function normalizeActivitySport(t: string): string {
+  const s = t.toLowerCase();
+  if (s.includes("run") || s.includes("trail")) return "Running";
+  if (s.includes("ride") || s.includes("cycl")) return "Cycling";
+  if (s.includes("nordicski") || s.includes("backcountry")) return "Skiing";
+  if (s.includes("rollerski")) return "Roller Skiing";
+  if (s.includes("orienteer")) return "Orienteering";
+  if (s.includes("weight") || s.includes("strength") || s.includes("workout")) return "Strength";
+  return t;
+}
+
+// ── AUTO path: full metrics update (runs after every sync) ─────────────────
 export async function updateVO2maxAndPaces(userId: string) {
+  const now = new Date();
+
   const [profile, activities, garminRecent, existingCache, racePBs] = await Promise.all([
     prisma.athleteProfile.findUnique({ where: { userId } }),
     loadActivities(userId),
     prisma.garminDailySummary.findMany({
-      where: { userId, date: { gte: subDays(new Date(), 7) } },
+      where: { userId, date: { gte: subDays(now, 7) } },
       orderBy: { date: "asc" }, select: { restingHR: true },
     }),
     prisma.fitnessCache.findUnique({ where: { userId } }),
     loadRacePBs(userId),
   ]);
 
-  // Use stored HR zones if they exist (don't recompute on auto-update)
-  const maxHR   = profile?.maxHeartRate    ?? existingCache?.maxHR    ?? 190;
-  const restHR  = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? existingCache?.restHR ?? 50;
+  const maxHR  = profile?.maxHeartRate    ?? existingCache?.maxHR    ?? 190;
+  const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? existingCache?.restHR ?? 50;
 
+  // ── VO2max & paces ──────────────────────────────────────────────────────
   const vo2maxResult = estimateVO2max(
     (activities as Act[]).map(a => ({
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
+      startDate: a.startDate,
     })),
     maxHR, restHR, racePBs,
   );
-
   const paceZones = buildPaceZones(vo2maxResult.vdot);
-
-  // Keep existing HR zones if they exist — only update VO2max + paces
   const existingZones = (existingCache?.zones as object | null) ?? buildHRZonesJson(maxHR, restHR);
+
+  // ── ATL / CTL / TSB / ACWR ─────────────────────────────────────────────
+  const dailyTSS = new Map<string, number>();
+  for (const a of activities as Act[]) {
+    const key = format(a.startDate, "yyyy-MM-dd");
+    const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR, restHR });
+    dailyTSS.set(key, (dailyTSS.get(key) ?? 0) + tss);
+  }
+  const loadCurve = buildLoadCurve(dailyTSS, subDays(now, 365), now);
+  const todayLoad = loadCurve.at(-1) ?? { atl: 0, ctl: 0, tsb: 0, tss: 0, date: "" };
+  const acwr = computeACWR(dailyTSS, now);
+
+  // ── Weekly volumes (last 16 weeks) ─────────────────────────────────────
+  const sixteenWeeksAgo = subDays(now, 112);
+  const weeklyVolumeJson: Record<string, Record<string, { km: number; timeSec: number }>> = {};
+  for (const a of activities as Act[]) {
+    if (a.startDate < sixteenWeeksAgo) continue;
+    const weekKey = format(startOfWeek(a.startDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    const sport = normalizeActivitySport(a.sportType);
+    if (!weeklyVolumeJson[weekKey]) weeklyVolumeJson[weekKey] = {};
+    if (!weeklyVolumeJson[weekKey][sport]) weeklyVolumeJson[weekKey][sport] = { km: 0, timeSec: 0 };
+    weeklyVolumeJson[weekKey][sport].km += a.distance / 1000;
+    weeklyVolumeJson[weekKey][sport].timeSec += a.movingTime;
+  }
+  for (const wk of Object.values(weeklyVolumeJson))
+    for (const s of Object.values(wk)) s.km = Math.round(s.km * 10) / 10;
+
+  // ── Zone seconds & polarisation (last 12 weeks) ────────────────────────
+  type ZoneMap = { z1: [number,number]; z2: [number,number]; z3: [number,number]; z4: [number,number]; z5: [number,number] };
+  const hz = existingZones as ZoneMap;
+  const twelveWeeksAgo = subDays(now, 84);
+  const zoneSecondsJson = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 } as Record<string, number>;
+  let polZ1 = 0, polZ2 = 0, polZ3 = 0;
+  const lt1hr = hz?.z2?.[1] ?? Math.round(maxHR * 0.78);
+  const lt2hr = hz?.z4?.[0] ?? Math.round(maxHR * 0.88);
+
+  for (const a of activities as Act[]) {
+    if (a.startDate < twelveWeeksAgo || !a.averageHeartrate) continue;
+    const hr = a.averageHeartrate;
+    const z = hz
+      ? (hr < hz.z1[1] ? 1 : hr < hz.z2[1] ? 2 : hr < hz.z3[1] ? 3 : hr < hz.z4[1] ? 4 : 5)
+      : (hr < lt1hr ? 1 : hr < lt2hr ? 3 : 5); // simplified fallback
+    zoneSecondsJson[`z${z}`] = (zoneSecondsJson[`z${z}`] ?? 0) + a.movingTime;
+    if (hr < lt1hr) polZ1 += a.movingTime;
+    else if (hr < lt2hr) polZ2 += a.movingTime;
+    else polZ3 += a.movingTime;
+  }
+  const polTotal = polZ1 + polZ2 + polZ3;
+  const polarisationJson = polTotal > 0
+    ? { z1Pct: Math.round(polZ1/polTotal*100), z2Pct: Math.round(polZ2/polTotal*100), z3Pct: Math.round(polZ3/polTotal*100) }
+    : null;
+
+  // ── Race predictions ───────────────────────────────────────────────────
+  const anchorPB = racePBs
+    .filter(p => p.timeSec > 60 && p.distanceM >= 1500)
+    .reduce<RacePB | null>((best, p) => {
+      if (!best) return p;
+      return vdotFromRace(p.distanceM, p.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? p : best;
+    }, null);
+  const predictionsJson = RACE_DISTANCES.map(({ label, meters }) => {
+    const peak = predictRaceTime(vo2maxResult.vdot, meters);
+    const riegel = anchorPB ? riegelPredict(anchorPB.timeSec, anchorPB.distanceM, meters) : null;
+    const range = predictionRange(peak, meters);
+    return { label, meters, peak, today: tsbAdjustedRaceTime(peak, todayLoad.tsb), riegel, rangeLo: range.lo, rangeHi: range.hi };
+  });
+
+  // ── Persist to cache ───────────────────────────────────────────────────
+  const sharedFields = {
+    vo2max:     vo2maxResult.value,
+    vdot:       vo2maxResult.vdot,
+    confidence: vo2maxResult.confidence,
+    method:     vo2maxResult.method,
+    paces:      pacesJson(paceZones),
+    atl:        todayLoad.atl,
+    ctl:        todayLoad.ctl,
+    tsb:        todayLoad.tsb,
+    acwr:       acwr ?? undefined,
+    weeklyVolumeJson,
+    zoneSecondsJson,
+    polarisationJson: polarisationJson ?? undefined,
+    predictionsJson,
+  };
 
   await prisma.fitnessCache.upsert({
     where: { userId },
     create: {
-      userId,
-      vo2max:     vo2maxResult.value,
-      vdot:       vo2maxResult.vdot,
-      confidence: vo2maxResult.confidence,
-      method:     vo2maxResult.method,
-      maxHR, restHR,
+      userId, maxHR, restHR,
       thresholdHR: existingCache?.thresholdHR ?? Math.round(maxHR * 0.88),
       zones: existingZones,
-      paces: pacesJson(paceZones),
+      ...sharedFields,
     },
-    update: {
-      vo2max:     vo2maxResult.value,
-      vdot:       vo2maxResult.vdot,
-      confidence: vo2maxResult.confidence,
-      method:     vo2maxResult.method,
-      // DO NOT update maxHR/restHR/thresholdHR/zones here — only on button press
-      paces: pacesJson(paceZones),
-    },
+    update: sharedFields,
   });
 
   return { vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot };
@@ -131,14 +216,10 @@ export async function updateHRZones(userId: string) {
     ?? estimateMaxHRFromRaces(raceMaxHRs)
     ?? estimateMaxHRFromThreshold(thresholdHRs)
     ?? estimateMaxHR(maxHRs);
-  const restHR = profile?.restingHeartRate
-    ?? garminRecent.at(-1)?.restingHR
-    ?? 50;
+  const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? 50;
 
   const racePBs = await loadRacePBs(userId);
 
-  // Build HR-pace regression params for pace→HR conversion in LT estimation
-  // Use recency weights (180-day half-life) so recent fitness dominates
   const regressionRuns = (activities as Act[])
     .filter(a => a.averageHeartrate && a.distance >= 3000 && a.movingTime > 0
       && /run|trail/i.test(a.sportType)
@@ -153,23 +234,19 @@ export async function updateHRZones(userId: string) {
     });
   const regression = buildHRPaceRegressionParams(regressionRuns, maxHR);
 
-  // Estimate LT1/LT2 from race PBs + regression for data-driven zones
   const lt = estimateLTFromRaces(racePBs, maxHR, restHR, regression);
   const hrZones = lt.source === "race-pbs"
     ? buildHRZonesFromLT(lt, maxHR, restHR)
     : buildHRZones(maxHR, restHR);
   const thresholdHR = Math.round((hrZones.z4[0] + hrZones.z4[1]) / 2);
+  const zonesJson = { z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5 };
 
-  const zonesJson = {
-    z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5,
-  };
-
-  // Also recompute VO2max with the updated maxHR
   const vo2maxResult = estimateVO2max(
     (activities as Act[]).map(a => ({
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
+      startDate: a.startDate,
     })),
     maxHR, restHR, racePBs,
   );
@@ -190,17 +267,18 @@ export async function updateHRZones(userId: string) {
     },
   });
 
-  // Persist maxHR + restHR to AthleteProfile so stats page picks them up
   await prisma.athleteProfile.upsert({
     where: { userId },
     create: { userId, maxHeartRate: maxHR, restingHeartRate: restHR },
     update: { maxHeartRate: maxHR, restingHeartRate: restHR },
   });
 
+  // Trigger full cache update so new zones are reflected everywhere
+  await updateVO2maxAndPaces(userId);
+
   return { maxHR, restHR, thresholdHR, zones: zonesJson, vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot };
 }
 
-// ── Backwards-compat wrapper (called by calibrate route) ──────────────────
 export async function computeAndCacheFitness(userId: string) {
   return updateHRZones(userId);
 }
@@ -209,7 +287,6 @@ export async function getFitnessCache(userId: string) {
   return prisma.fitnessCache.findUnique({ where: { userId } });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
 function buildHRZonesJson(maxHR: number, restHR: number) {
   const z = buildHRZones(maxHR, restHR);
   return { z1: z.z1, z2: z.z2, z3: z.z3, z4: z.z4, z5: z.z5 };
