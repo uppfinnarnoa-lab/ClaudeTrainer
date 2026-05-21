@@ -28,8 +28,8 @@ export function StravaConnectSection({
   const [syncing,      setSyncing]      = useState(false);
   const [syncResult,   setSyncResult]   = useState<{ synced?: number; error?: string } | null>(null);
   const [copied,       setCopied]       = useState(false);
-  const [backfilling,  setBackfilling]  = useState(false);
-  const [backfillResult, setBackfillResult] = useState<{ updated: number; remaining: number } | null>(null);
+  const [backfilling,   setBackfilling]   = useState(false);
+  const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
 
   const credentialsSet = hasClientId && hasClientSecret;
 
@@ -71,12 +71,32 @@ export function StravaConnectSection({
 
   async function handleBackfill() {
     setBackfilling(true);
-    setBackfillResult(null);
+    setBackfillStatus("Starting...");
     try {
-      const res = await fetch("/api/strava/backfill-descriptions", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setBackfillResult({ updated: data.updated ?? 0, remaining: data.remaining ?? 0 });
+      const res = await fetch("/api/strava/backfill-descriptions?stream=true", { method: "POST" });
+      if (!res.ok || !res.body) { setBackfillStatus("Error — check console"); return; }
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += dec.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (d.type === "start") setBackfillStatus(`Fetching ${d.total} activities...`);
+            if (d.type === "progress") setBackfillStatus(`${d.updated}/${d.total} fetched${d.errors > 0 ? ` (${d.errors} errors)` : ""}...`);
+            if (d.type === "rate_limit") setBackfillStatus(`${d.updated}/${d.total} — rate limit, waiting ${Math.round(d.waitMs/1000)}s...`);
+            if (d.type === "done") setBackfillStatus(`✓ Done! ${d.updated} descriptions fetched${d.errors > 0 ? `, ${d.errors} errors` : ""}.`);
+            if (d.type === "error") setBackfillStatus(`Error: ${d.message}`);
+          } catch { /* skip malformed */ }
+        }
       }
     } finally {
       setBackfilling(false);
@@ -244,11 +264,11 @@ export function StravaConnectSection({
                     className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2 text-sm font-medium text-primary hover:bg-surface transition disabled:opacity-50"
                   >
                     {backfilling ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-                    {backfilling ? "Fetching..." : "Backfill descriptions (30 at a time)"}
+                    {backfilling ? "Fetching all..." : "Fetch all descriptions (runs until done)"}
                   </button>
-                  {backfillResult && (
-                    <p className="text-xs text-accent">
-                      ✓ Updated {backfillResult.updated} · {backfillResult.remaining} remaining
+                  {backfillStatus && (
+                    <p className={`text-xs ${backfillStatus.startsWith("✓") ? "text-accent" : backfillStatus.startsWith("Error") ? "text-error" : "text-muted"}`}>
+                      {backfillStatus}
                     </p>
                   )}
                 </div>
