@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { StatsClient } from "./stats-client";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis } from "@/lib/fitness/zones";
+import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis, type HRZones } from "@/lib/fitness/zones";
 import { computeTSS, buildLoadCurve, computeACWR } from "@/lib/fitness/training-load";
 import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace } from "@/lib/fitness/vo2max";
 import { RACE_DISTANCES } from "@/lib/fitness/paces";
@@ -98,10 +98,12 @@ export default async function StatsPage() {
     : Infinity;
   const cacheReady = cacheAge < CACHE_TTL_MS && !!fitnessCache?.weeklyVolumeJson;
 
-  // ── HR zones (always from cache/profile — not expensive) ────────────────
+  // ── HR zones — prefer calibrated zones from cache, fall back to default formula ──
   const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? 50;
   const maxHR = profile?.maxHeartRate ?? fitnessCache?.maxHR ?? 190;
-  const hrZones = buildHRZones(maxHR, restHR);
+  const hrZones: HRZones = fitnessCache?.zones
+    ? { ...(fitnessCache.zones as HRZones), maxHR, restHR }  // use calibrated zones
+    : buildHRZones(maxHR, restHR);  // fallback: default formula
 
   if (cacheReady && fitnessCache) {
     // ── FAST PATH: read everything from cache ─────────────────────────────
@@ -173,10 +175,11 @@ export default async function StatsPage() {
     }
 
     // Per-model predictions from the cached VO2max breakdown
+    const cachedBreakdown = (fitnessCache.vo2maxBreakdownJson ?? {}) as Record<string, number>;
     const fastModelVdots: Record<string, number> = {
       "Weighted (default)": vo2max.vdot,
       ...Object.fromEntries(
-        Object.entries((vo2max as { breakdown?: Record<string, number> }).breakdown ?? {})
+        Object.entries(cachedBreakdown)
           .filter(([, v]) => v > 30 && v < 90)
           .map(([name, v]) => [name, Math.round(v * 10) / 10])
       ),
@@ -268,7 +271,11 @@ export default async function StatsPage() {
     ?? estimateMaxHRFromRaces(raceMaxHRs)
     ?? estimateMaxHRFromThreshold(thresholdHRs)
     ?? estimateMaxHR(maxHRs);
-  const computedHrZones = buildHRZones(computedMaxHR, restHR);
+  // Use calibrated zones from FitnessCache if available (from "Estimera zoner" button)
+  // Fall back to default formula only if no calibration has been done
+  const computedHrZones: HRZones = fitnessCache?.zones
+    ? { ...(fitnessCache.zones as HRZones), maxHR: computedMaxHR, restHR }
+    : buildHRZones(computedMaxHR, restHR);
 
   const vo2max = estimateVO2max(
     activities.map((a: A) => ({
@@ -327,14 +334,39 @@ export default async function StatsPage() {
     return Object.values(weeklyVolumes[key] ?? {}).reduce((s, v) => s + v.km, 0);
   });
 
-  const anchorPB = racePBs
-    .filter(p => p.timeSec > 60 && p.distanceM >= 1500)
-    .reduce<{ distanceM: number; timeSec: number } | null>((best, p) =>
-      !best || vdotFromRace(p.distanceM, p.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? p : best, null);
+  // Distance-specific anchor PB for Riegel predictions:
+  // Use closest PB to each target distance — avoids marathon being extrapolated
+  // from a 3K PB (which overestimates endurance) or 3K from a marathon (overestimates speed).
+  // Riegel exponent varies by distance ratio: larger extrapolations get larger exponent.
+  function bestAnchorFor(targetM: number): { timeSec: number; distanceM: number } | null {
+    const usable = racePBs.filter(p => p.timeSec > 60 && p.distanceM >= 800);
+    if (usable.length === 0) return null;
+    // For distances ≤ 5K: prefer PBs ≤ 5K (speed-specific)
+    // For distances > 5K: prefer PBs ≥ 5K (endurance-specific)
+    const preferred = targetM <= 5000
+      ? usable.filter(p => p.distanceM <= 10000)
+      : usable.filter(p => p.distanceM >= 5000);
+    const pool = preferred.length > 0 ? preferred : usable;
+    // Pick the PB closest in distance to target (log scale)
+    return pool.reduce((best, p) =>
+      Math.abs(Math.log(p.distanceM / targetM)) < Math.abs(Math.log(best.distanceM / targetM)) ? p : best
+    );
+  }
+
+  // Riegel exponent: longer extrapolations need higher exponent (more fatigue penalty)
+  function riegelExponent(fromM: number, toM: number): number {
+    const ratio = Math.max(fromM, toM) / Math.min(fromM, toM);
+    if (toM >= 42000) return 1.08;   // marathon: extra fatigue/nutrition penalty
+    if (ratio > 5)    return 1.07;   // large extrapolation
+    return 1.06;                      // standard
+  }
 
   const predictions = RACE_DISTANCES.map(({ label, meters }) => {
     const peak = predictRaceTime(vo2max.vdot, meters);
-    const riegel = anchorPB ? riegelPredict(anchorPB.timeSec, anchorPB.distanceM, meters) : null;
+    const anchor = bestAnchorFor(meters);
+    const riegel = anchor
+      ? riegelPredict(anchor.timeSec, anchor.distanceM, meters, riegelExponent(anchor.distanceM, meters))
+      : null;
     const range = predictionRange(peak, meters);
     return { label, meters, peak, today: tsbAdjustedRaceTime(peak, todayLoad.tsb), riegel, rangeLo: range.lo, rangeHi: range.hi };
   });

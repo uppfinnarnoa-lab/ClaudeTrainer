@@ -20,12 +20,14 @@ interface Props {
   blocks: TrainingBlock[];
   onDayClick: (date: string) => void;
   onWorkoutClick: (workout: PlannedWorkout) => void;
+  onTemplateDrop?: (templateId: string, date: string) => void;
   weekRunActivities?: { date: string; distanceM: number }[];
 }
 
-export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, weekRunActivities = [] }: Props) {
+export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, onTemplateDrop, weekRunActivities = [] }: Props) {
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [summaryLayout, setSummaryLayout] = useState<SummaryLayout>("row");
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
 
   // Persist layout preference
   useEffect(() => {
@@ -162,18 +164,30 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, 
                   const isPast = key <= today; // today counts as past — shows outcome modal, not editor
                   const blockHere = blockForDate(day);
 
+                  const isDragOver = dragOverDate === key;
+
                   return (
                     <div
                       key={key}
                       onClick={() => onDayClick(key)}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverDate(key); }}
+                      onDragLeave={() => setDragOverDate(null)}
+                      onDrop={e => {
+                        e.preventDefault();
+                        setDragOverDate(null);
+                        const templateId = e.dataTransfer.getData("templateId");
+                        if (templateId && onTemplateDrop) onTemplateDrop(templateId, key);
+                      }}
                       className={cn(
                         "min-h-[88px] rounded-xl p-1.5 cursor-pointer border transition-colors",
-                        isToday(day)
+                        isDragOver
+                          ? "border-accent bg-accent/10"
+                          : isToday(day)
                           ? "border-accent/50 bg-accent/5"
                           : "border-transparent hover:border-border hover:bg-surface",
                         !isCurrentMonth && "opacity-35"
                       )}
-                      style={blockHere ? { backgroundColor: `${blockHere.color}0D` } : undefined}
+                      style={blockHere && !isDragOver ? { backgroundColor: `${blockHere.color}0D` } : undefined}
                     >
                       {/* Day number */}
                       <div className="mb-1">
@@ -185,18 +199,19 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, 
                         </span>
                       </div>
 
-                      {/* Workouts */}
+                      {/* Workouts — show up to 5, compact when >3 */}
                       <div className="space-y-0.5">
-                        {dayWorkouts.slice(0, 3).map(w => (
+                        {dayWorkouts.slice(0, 5).map(w => (
                           <WorkoutPill
                             key={w.id}
                             workout={w}
                             isPast={isPast}
                             onClick={onWorkoutClick}
+                            compact={dayWorkouts.length > 3}
                           />
                         ))}
-                        {dayWorkouts.length > 3 && (
-                          <p className="text-xs text-muted pl-1">+{dayWorkouts.length - 3}</p>
+                        {dayWorkouts.length > 5 && (
+                          <p className="text-xs text-muted pl-1">+{dayWorkouts.length - 5}</p>
                         )}
                       </div>
                     </div>

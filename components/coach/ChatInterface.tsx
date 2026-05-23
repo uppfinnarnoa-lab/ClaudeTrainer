@@ -173,8 +173,8 @@ export function ChatInterface({
     setShowToolMenu(val === "/");
   }
 
-  function selectTool(example: string) {
-    setInput(example);
+  function selectTool() {
+    setInput("");
     setShowToolMenu(false);
     textareaRef.current?.focus();
   }
@@ -370,33 +370,33 @@ export function ChatInterface({
               </div>
               <div className="divide-y divide-border/50 max-h-72 overflow-y-auto">
                 {[
-                  { name: "get_fitness_summary", label: "Fitness summary", desc: "VO2max, CTL, TSB, zones, predictions", example: "Visa min fitness-sammanfattning" },
-                  { name: "get_race_history", label: "Race history / PBs", desc: "All personal bests by distance", example: "Visa alla mina PBs" },
-                  { name: "get_readiness", label: "Readiness today", desc: "HRV, sleep, resting HR, TSB", example: "Hur är min återhämtning idag?" },
-                  { name: "get_training_blocks", label: "Training blocks", desc: "Current and upcoming training blocks", example: "Visa mina träningsblock" },
-                  { name: "get_upcoming_plan", label: "Upcoming plan", desc: "Planned sessions next 14 days", example: "Visa min träningsplan kommande 2 veckor" },
-                  { name: "search_activities", label: "Search activities", desc: "Find sessions by keyword, date, sport", example: "Hitta mina senaste tisdagsbanor" },
-                  { name: "get_activity_detail", label: "Activity detail", desc: "Full splits, HR, description for one session", example: "Visa detaljer om mitt senaste intervallpass" },
-                  { name: "get_activities_in_range", label: "Activities in range ⚠️ cost", desc: "ALL activities with full data — requires confirmation", example: "Analysera alla mina pass från maj 2025" },
-                  { name: "analyze_full_history", label: "Full history analysis", desc: "Multi-year aggregated stats", example: "Analysera min träningshistorik de senaste 3 åren" },
-                  { name: "create_workout", label: "Create workout", desc: "Add a session to the training plan", example: "Lägg till ett lätt löppass 10km på fredag" },
-                  { name: "get_upcoming_plan + delete_workout", label: "Delete workout", desc: "Remove a planned session", example: "Ta bort fredagens pass" },
-                  { name: "update_profile", label: "Update profile", desc: "Change weight, goal, training years", example: "Uppdatera min vikt till 72kg" },
+                  { name: "get_fitness_summary", label: "Fitness summary", desc: "VO2max, CTL, TSB, zones, predictions", hint: "ex: Visa min fitness-sammanfattning" },
+                  { name: "get_race_history", label: "Race history / PBs", desc: "All personal bests by distance", hint: "ex: Visa alla mina PBs" },
+                  { name: "get_readiness", label: "Readiness today", desc: "HRV, sleep, resting HR, TSB", hint: "ex: Hur är min återhämtning idag?" },
+                  { name: "get_training_blocks", label: "Training blocks", desc: "Current and upcoming training blocks", hint: "ex: Visa mina träningsblock" },
+                  { name: "get_upcoming_plan", label: "Upcoming plan", desc: "Planned sessions next 14 days", hint: "ex: Visa min träningsplan kommande 2 veckor" },
+                  { name: "search_activities", label: "Search activities", desc: "Find sessions by keyword, date, sport", hint: "ex: Hitta mina löppass från maj 2025" },
+                  { name: "get_activity_detail", label: "Activity detail", desc: "Full splits, HR, description for one session", hint: "ex: Visa detaljer om mitt senaste intervallpass" },
+                  { name: "get_activities_in_range", label: "Activities in range ⚠️ cost", desc: "ALL activities with full data — requires confirmation", hint: "ex: Analysera alla mina pass från maj 2025" },
+                  { name: "analyze_full_history", label: "Full history analysis", desc: "Multi-year aggregated stats", hint: "ex: Analysera min träningshistorik de senaste 3 åren" },
+                  { name: "create_workout", label: "Create workout", desc: "Add a session to the training plan", hint: "ex: Lägg till ett lätt löppass 10km på fredag" },
+                  { name: "get_upcoming_plan + delete_workout", label: "Delete workout", desc: "Remove a planned session", hint: "ex: Ta bort fredagens pass" },
+                  { name: "update_profile", label: "Update profile", desc: "Change weight, goal, training years", hint: "ex: Uppdatera min vikt till 72kg" },
                 ].map(tool => (
                   <button
                     key={tool.name}
-                    onClick={() => selectTool(tool.example)}
+                    onClick={() => selectTool()}
                     className="w-full text-left px-3 py-2.5 hover:bg-surface-2 transition flex items-start gap-3"
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-primary">{tool.label}</p>
                       <p className="text-[10px] text-muted truncate">{tool.desc}</p>
                     </div>
-                    <p className="text-[10px] text-accent shrink-0 mt-0.5 hidden sm:block">{tool.example}</p>
+                    <p className="text-[10px] text-accent/70 shrink-0 mt-0.5 hidden sm:block">{tool.hint}</p>
                   </button>
                 ))}
               </div>
-              <p className="px-3 py-1.5 text-[10px] text-muted border-t border-border">Type / to open · Esc to close · Click to use example</p>
+              <p className="px-3 py-1.5 text-[10px] text-muted border-t border-border">Skriv / för att öppna · Esc stänger · Klicka för att välja — skriv sedan din egna fråga</p>
             </div>
           )}
           <div className="flex gap-2 items-end">

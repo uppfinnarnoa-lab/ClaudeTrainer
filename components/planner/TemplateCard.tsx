@@ -21,8 +21,13 @@ export function TemplateCard({ template, onAddToDate, onDelete, onEdit, compact 
 
   return (
     <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData("templateId", template.id);
+        e.dataTransfer.effectAllowed = "copy";
+      }}
       className={cn(
-        "group rounded-xl bg-surface border border-border p-3 space-y-2 hover:border-accent/40 transition-colors",
+        "group rounded-xl bg-surface border border-border p-3 space-y-2 hover:border-accent/40 transition-colors cursor-grab active:cursor-grabbing",
         compact && "p-2 space-y-1.5"
       )}
       style={{ borderLeftWidth: 5, borderLeftColor: color }}

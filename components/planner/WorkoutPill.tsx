@@ -10,9 +10,10 @@ interface Props {
   workout: PlannedWorkout;
   isPast: boolean;
   onClick: (workout: PlannedWorkout) => void;
+  compact?: boolean;
 }
 
-export function WorkoutPill({ workout, isPast, onClick }: Props) {
+export function WorkoutPill({ workout, isPast, onClick, compact }: Props) {
   const typeColor = workout.color
     ?? workoutColor(workout.sportType, workout.template?.type?.name ?? null);
 
@@ -25,8 +26,9 @@ export function WorkoutPill({ workout, isPast, onClick }: Props) {
     <button
       onClick={e => { e.stopPropagation(); onClick(workout); }}
       className={cn(
-        "w-full text-left px-2 py-1.5 rounded-lg text-xs transition-all group relative overflow-hidden",
+        "w-full text-left rounded-lg text-xs transition-all group relative overflow-hidden",
         "border",
+        compact ? "px-2 py-0.5" : "px-2 py-1.5",
         isMissed && showStatus    ? "opacity-55 bg-surface border-border" :
         isCompleted && showStatus ? "bg-surface border-border" :
                                     "bg-surface border-border hover:border-accent/30"

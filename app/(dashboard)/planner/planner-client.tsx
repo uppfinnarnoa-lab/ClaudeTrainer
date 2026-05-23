@@ -57,12 +57,12 @@ export function PlannerClient(props: Props) {
   }
 
   // ── Add template to a date ─────────────────────────────────────────
-  function handleAddTemplateToDate(templateId: string) {
+  function handleAddTemplateToDate(templateId: string, date?: string) {
     const template = templates.find(t => t.id === templateId);
     if (!template) return;
-    const date = builderDate ?? new Date().toISOString().slice(0, 10);
+    const targetDate = date ?? builderDate ?? new Date().toISOString().slice(0, 10);
     createWorkout({
-      date,
+      date: targetDate,
       name: template.name,
       sportType: template.sport.name,
       templateId,
@@ -239,21 +239,7 @@ export function PlannerClient(props: Props) {
         <TemplateLibrary
           templates={templates}
           sports={props.sports}
-          onAddToDate={id => {
-            const template = templates.find(t => t.id === id);
-            if (!template) return;
-            const date = prompt("Add to date (YYYY-MM-DD):", new Date().toISOString().slice(0, 10));
-            if (!date) return;
-            createWorkout({
-              date,
-              name: template.name,
-              sportType: template.sport.name,
-              templateId: id,
-              targetDuration: template.estimatedDuration,
-              targetDistance: template.estimatedDistance,
-              color: template.color ?? template.sport.color,
-            });
-          }}
+          onAddToDate={id => handleAddTemplateToDate(id)}
           onDeleteTemplate={handleDeleteTemplate}
           onNewTemplate={() => openBuilder()}
           onEditTemplate={t => setEditingTemplate(t)}
@@ -266,6 +252,7 @@ export function PlannerClient(props: Props) {
             blocks={props.blocks}
             onDayClick={date => openBuilder(date)}
             onWorkoutClick={handleWorkoutClick}
+            onTemplateDrop={(templateId, date) => handleAddTemplateToDate(templateId, date)}
             weekRunActivities={props.weekRunActivities ?? []}
           />
         </div>

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Loader2, Edit2, Trash2, ExternalLink, Trophy, Link2 } from "lucide-react";
+import { Plus, Loader2, Edit2, Trash2, ExternalLink, Trophy, Link2, Unlink } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceDot } from "recharts";
 import { secToTimeStr } from "@/lib/fitness/paces";
 import { cn } from "@/lib/utils";
@@ -42,30 +42,12 @@ export function RacesClient({ records: initialRecords, perfTrend = [] }: Props) 
   const [selected, setSelected] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editRecord, setEditRecord] = useState<RaceRecord | null>(null);
-  const [smartFilter, setSmartFilter] = useState(true);
-  const FILTER_THRESHOLD = 1.35;
-
-  const pbByDistance = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of records) {
-      if (!map.has(r.distance) || r.time < map.get(r.distance)!) map.set(r.distance, r.time);
-    }
-    return map;
-  }, [records]);
-
-  const filteredRecords = useMemo(() => {
-    if (!smartFilter) return records;
-    return records.filter(r => {
-      const pb = pbByDistance.get(r.distance);
-      return !pb || r.time <= pb * FILTER_THRESHOLD;
-    });
-  }, [records, smartFilter, pbByDistance]);
-
-  const hiddenCount = records.length - filteredRecords.length;
+  const [autoLinking, setAutoLinking] = useState(false);
+  const [linkResult, setLinkResult] = useState<{ linked: number } | null>(null);
 
   const distances = useMemo(() => {
     const map = new Map<string, RaceRecord[]>();
-    for (const r of filteredRecords) {
+    for (const r of records) {
       if (!map.has(r.distance)) map.set(r.distance, []);
       map.get(r.distance)!.push(r);
     }
@@ -76,17 +58,41 @@ export function RacesClient({ records: initialRecords, perfTrend = [] }: Props) 
       if (bi !== -1) return 1;
       return a.localeCompare(b);
     });
-  }, [filteredRecords]);
+  }, [records]);
 
   const selectedDistance = selected ?? distances[0]?.[0];
   const distanceRecords = useMemo(() =>
-    filteredRecords.filter(r => r.distance === selectedDistance).sort((a, b) => a.date.localeCompare(b.date)),
-    [filteredRecords, selectedDistance]
+    records.filter(r => r.distance === selectedDistance).sort((a, b) => a.date.localeCompare(b.date)),
+    [records, selectedDistance]
   );
 
   const pb = records
     .filter(r => r.distance === selectedDistance)
     .reduce<RaceRecord | null>((best, r) => !best || r.time < best.time ? r : best, null);
+
+  async function handleAutoLink() {
+    setAutoLinking(true);
+    setLinkResult(null);
+    const res = await fetch("/api/races/auto-link", { method: "POST" });
+    if (res.ok) {
+      const data: { linked: number; updates: { id: string; stravaActivityId: string }[] } = await res.json();
+      setRecords(prev => prev.map(r => {
+        const u = data.updates.find(x => x.id === r.id);
+        return u ? { ...r, stravaActivityId: u.stravaActivityId } : r;
+      }));
+      setLinkResult({ linked: data.linked });
+    }
+    setAutoLinking(false);
+  }
+
+  async function unlinkActivity(id: string) {
+    await fetch(`/api/races/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stravaActivityId: null }),
+    });
+    setRecords(prev => prev.map(r => r.id === id ? { ...r, stravaActivityId: null } : r));
+  }
 
   async function deleteRecord(id: string) {
     if (!confirm("Radera detta resultat?")) return;
@@ -125,23 +131,18 @@ export function RacesClient({ records: initialRecords, perfTrend = [] }: Props) 
           Lägg till resultat
         </button>
 
-        {records.length > 0 && (
-          <button
-            onClick={() => setSmartFilter(v => !v)}
-            className={cn(
-              "ml-auto inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border transition",
-              smartFilter
-                ? "border-accent/30 bg-accent/5 text-accent"
-                : "border-border text-muted hover:text-primary"
-            )}
-            title="Dölj resultat >35% långsammare än PB (filtrerar bort OL, terräng)"
-          >
-            {smartFilter ? "Vägfilter på" : "Visa alla"}
-            {smartFilter && hiddenCount > 0 && (
-              <span className="text-muted font-normal">({hiddenCount} dolda)</span>
-            )}
-          </button>
-        )}
+        <button
+          onClick={handleAutoLink}
+          disabled={autoLinking}
+          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-medium text-muted hover:text-primary hover:border-accent/40 disabled:opacity-50 transition"
+          title="Koppla PRs till Strava-aktiviteter baserat på datum (±1 dag, ±20% distans)"
+        >
+          {autoLinking ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+          Koppla aktiviteter
+          {linkResult !== null && (
+            <span className="text-accent font-semibold">({linkResult.linked} kopplade)</span>
+          )}
+        </button>
       </div>
 
       {records.length === 0 ? (
@@ -264,10 +265,19 @@ export function RacesClient({ records: initialRecords, perfTrend = [] }: Props) 
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition justify-end">
                             {r.stravaActivityId && (
-                              <a href={`https://www.strava.com/activities/${r.stravaActivityId}`} target="_blank" rel="noopener noreferrer"
-                                className="p-1 rounded text-muted hover:text-accent transition">
-                                <ExternalLink size={13} />
-                              </a>
+                              <>
+                                <a href={`https://www.strava.com/activities/${r.stravaActivityId}`} target="_blank" rel="noopener noreferrer"
+                                  className="p-1 rounded text-muted hover:text-accent transition">
+                                  <ExternalLink size={13} />
+                                </a>
+                                <button
+                                  onClick={e => { e.stopPropagation(); unlinkActivity(r.id); }}
+                                  className="p-1 rounded text-muted hover:text-error transition"
+                                  title="Koppla bort Strava-aktivitet"
+                                >
+                                  <Unlink size={13} />
+                                </button>
+                              </>
                             )}
                             <button onClick={() => setEditRecord(r)} className="p-1 rounded text-muted hover:text-primary transition">
                               <Edit2 size={13} />

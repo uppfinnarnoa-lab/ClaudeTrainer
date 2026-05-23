@@ -30,9 +30,9 @@ export interface PaceZones {
  * The absolute max is used only as a floor (we won't estimate BELOW what was
  * actually observed).
  */
-// Artifact cap: optical HR sensors and chest straps occasionally spike to 220-230 bpm.
-// No recreational/amateur athlete has a true maxHR above this threshold.
-export const MAXHR_ARTIFACT_CAP = 205;
+// Artifact cap: well-trained adult endurance athletes rarely exceed 190 bpm.
+// Values above this are treated as sensor artifacts (optical HR spikes etc.)
+export const MAXHR_ARTIFACT_CAP = 190;
 
 /**
  * Estimate max HR from per-activity max HR values.
@@ -223,9 +223,24 @@ export function estimateLTFromRaces(
   const lt2HRFromRegression = paceToHR(lt2PaceSecPerKm);
   const lt1HRFromRegression = paceToHR(lt1PaceSecPerKm);
 
+  // Never mix sources: if either regression HR is unavailable, use percentages for BOTH.
+  // Mixed sources (one from regression, one from fixed %) can invert lt1/lt2.
+  const bothValid = lt1HRFromRegression !== null && lt2HRFromRegression !== null;
+  const lt1HR = bothValid ? lt1HRFromRegression! : Math.round(maxHR * 0.78);
+  const lt2HR = bothValid ? lt2HRFromRegression! : Math.round(maxHR * 0.88);
+
+  // Final sanity: regression could theoretically invert values with unusual data
+  if (lt1HR >= lt2HR) {
+    return {
+      lt1HR: Math.round(maxHR * 0.78), lt2HR: Math.round(maxHR * 0.88),
+      lt1PaceSecPerKm: Math.round(lt1PaceSecPerKm), lt2PaceSecPerKm: Math.round(lt2PaceSecPerKm),
+      source: "race-pbs",
+    };
+  }
+
   return {
-    lt1HR: lt1HRFromRegression ?? Math.round(maxHR * 0.78),
-    lt2HR: lt2HRFromRegression ?? Math.round(maxHR * 0.88),
+    lt1HR,
+    lt2HR,
     lt1PaceSecPerKm: Math.round(lt1PaceSecPerKm),
     lt2PaceSecPerKm: Math.round(lt2PaceSecPerKm),
     source: "race-pbs",
@@ -234,7 +249,7 @@ export function estimateLTFromRaces(
 
 /**
  * Build HR zones anchored to data-derived LT1/LT2 instead of fixed percentages.
- * Falls back to standard percentages when no race data is available.
+ * Falls back to standard percentages when values are physiologically inconsistent.
  */
 export function buildHRZonesFromLT(
   lt: LTBoundaries,
@@ -243,17 +258,43 @@ export function buildHRZonesFromLT(
 ): HRZones {
   const lt1 = lt.lt1HR;
   const lt2 = lt.lt2HR;
-  // Z2 width: ~7% of LT1 value → meaningful aerobic zone (~10-12 bpm)
+
+  // Guard: if LT values are inverted or degenerate, fall back to fixed percentages
+  if (lt1 >= lt2 || lt1 < restHR + 4 || lt2 >= maxHR) {
+    return buildHRZones(maxHR, restHR);
+  }
+
   const z2width = Math.max(8, Math.round(lt1 * 0.07));
-  return {
-    z1: [restHR,          lt1 - z2width],
-    z2: [lt1 - z2width,   lt1],
-    z3: [lt1,             lt2],
-    z4: [lt2,             Math.min(lt2 + 8, maxHR - 2)],
+  // Ensure Z1 lower bound doesn't exceed Z1 upper bound
+  const z1lo = Math.min(restHR, lt1 - z2width - 1);
+  const z1hi = lt1 - z2width;
+
+  const zones: HRZones = {
+    z1: [z1lo,     z1hi],
+    z2: [z1hi,     lt1],
+    z3: [lt1,      lt2],
+    z4: [lt2,      Math.min(lt2 + 8, maxHR - 2)],
     z5: [Math.min(lt2 + 8, maxHR - 2), maxHR],
     maxHR,
     restHR,
   };
+
+  return ensureValidZones(zones) ? zones : buildHRZones(maxHR, restHR);
+}
+
+/** Validate that all zones are strictly monotonically increasing with positive widths. */
+export function ensureValidZones(z: HRZones): boolean {
+  return (
+    z.z1[0] < z.z1[1] &&
+    z.z1[1] <= z.z2[0] &&
+    z.z2[0] < z.z2[1] &&
+    z.z2[1] <= z.z3[0] &&
+    z.z3[0] < z.z3[1] &&
+    z.z3[1] <= z.z4[0] &&
+    z.z4[0] < z.z4[1] &&
+    z.z4[1] <= z.z5[0] &&
+    z.z5[0] < z.z5[1]
+  );
 }
 
 // ── Statistical zone estimation ────────────────────────────────────────────
@@ -300,23 +341,29 @@ export function estimateZonesFromStatisticalAnalysis(
 
   const points = runs
     .filter(r =>
-      r.avgHR > maxHR * 0.55 && r.avgHR < maxHR * 0.95 &&
-      r.distanceM >= MIN_DIST && r.movingTimeSec >= MIN_DURATION_SEC
+      // Reject near-max HR (sensor artifacts or all-out efforts — not steady state)
+      r.avgHR > maxHR * 0.52 && r.avgHR < maxHR * 0.96 &&
+      r.distanceM >= MIN_DIST && r.movingTimeSec >= MIN_DURATION_SEC &&
+      // Reject extreme terrain where GAP correction is unreliable (>12% avg grade)
+      r.totalElevationGain / r.distanceM < 0.12
     )
     .map(r => {
       const rawPace = r.movingTimeSec / (r.distanceM / 1000);
-      const grade = Math.min(0.15, Math.max(0, r.totalElevationGain / r.distanceM));
+      const grade = Math.min(0.12, Math.max(0, r.totalElevationGain / r.distanceM));
       const gap = rawPace / (1 + grade * 0.033);
-      // Downweight hot runs (heat inflates HR artificially)
-      const tempWeight = (r.weatherTemp ?? 15) > 25 ? 0.4 : 1.0;
-      // Recency weight (90-day half-life for zone stability)
+      const temp = r.weatherTemp ?? 15;
+      // Reject very hot runs entirely — heat drastically inflates HR beyond useful range
+      if (temp > 30) return null;
+      const tempWeight = temp > 25 ? 0.35 : temp > 20 ? 0.75 : 1.0;
       const daysAgo = r.startDate
         ? (Date.now() - r.startDate.getTime()) / 86_400_000
         : 180;
       const recency = Math.exp(-daysAgo / 180);
       return { gap, hr: r.avgHR, weight: tempWeight * recency };
     })
-    .filter(p => p.gap > 200 && p.gap < 600); // 3:20–10:00/km only
+    .filter((p): p is { gap: number; hr: number; weight: number } =>
+      p !== null && p.gap > 200 && p.gap < 600 // 3:20–10:00/km
+    );
 
   if (points.length < 40) return null;
 
@@ -368,27 +415,39 @@ export function estimateZonesFromStatisticalAnalysis(
   const totalVar = hrArr.reduce((s, v) => s + (v - meanHR) ** 2, 0);
   const rSquared = Math.max(0, Math.round((1 - bestErr / totalVar) * 100) / 100);
 
-  if (rSquared < 0.70) return null; // poor fit — not enough HR-pace signal
+  if (rSquared < 0.72) return null; // raised threshold — require clearer HR-pace signal
 
   const lt1PaceSecPerKm = paceArr[bp1];
   const lt2PaceSecPerKm = paceArr[bp2];
   const lt1HR = Math.round(hrArr[bp1]);
   const lt2HR = Math.round(hrArr[bp2]);
 
-  // Sanity: LT1 < LT2 < maxHR, minimum separation of 5 bpm
-  if (lt1HR >= lt2HR - 5 || lt2HR >= maxHR * 0.98) return null;
+  // Sanity: LT1 < LT2 < maxHR with meaningful separation, and in realistic HR ranges
+  if (lt1HR >= lt2HR - 8) return null; // minimum 8 bpm gap between thresholds
+  if (lt2HR >= maxHR * 0.98) return null;
+  if (lt1HR < maxHR * 0.60 || lt2HR < maxHR * 0.70) return null; // thresholds too low — bad data
+  // Breakpoints must be in physiologically plausible pace ranges
+  if (lt1PaceSecPerKm < 240 || lt1PaceSecPerKm > 500) return null; // LT1 at 4:00–8:20/km
+  if (lt2PaceSecPerKm < 200 || lt2PaceSecPerKm > 420) return null; // LT2 at 3:20–7:00/km
+  if (lt2PaceSecPerKm >= lt1PaceSecPerKm) return null; // LT2 must be faster than LT1
 
   // ── 5. Build non-uniform zones ─────────────────────────────────────────
   const z2width = Math.max(4, Math.round((lt2HR - lt1HR) * 0.12));
+  // Clamp Z1 lower bound so it never exceeds Z1 upper bound
+  const z1hi = lt1HR - z2width;
+  const z1lo = Math.min(restHR, z1hi - 1);
   const zones: HRZones = {
-    z1: [restHR,            lt1HR - z2width],
-    z2: [lt1HR - z2width,   lt1HR],
-    z3: [lt1HR,             lt2HR],
-    z4: [lt2HR,             Math.min(lt2HR + 8, maxHR - 2)],
+    z1: [z1lo,  z1hi],
+    z2: [z1hi,  lt1HR],
+    z3: [lt1HR, lt2HR],
+    z4: [lt2HR, Math.min(lt2HR + 8, maxHR - 2)],
     z5: [Math.min(lt2HR + 8, maxHR - 2), maxHR],
     maxHR,
     restHR,
   };
+
+  // Final guard: if zones are still invalid for any reason, discard
+  if (!ensureValidZones(zones)) return null;
 
   return { lt1HR, lt2HR, lt1PaceSecPerKm, lt2PaceSecPerKm, rSquared, bucketCount: buckets.length, zones };
 }

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildPaceZones } from "@/lib/fitness/zones";
+import { buildHRZones, buildPaceZones, type HRZones } from "@/lib/fitness/zones";
 import { estimateVO2max, type RacePB } from "@/lib/fitness/vo2max";
 import { secPerKmToPaceStr } from "@/lib/fitness/paces";
 import { tsbLabel } from "@/lib/fitness/training-load";
@@ -81,10 +81,12 @@ export async function buildCoachContext(userId: string): Promise<CoachContext> {
       loadRacePBsForContext(userId),
     ]);
 
-  // ── HR / zones — prefer FitnessCache (avoids recomputing from full history) ──
+  // ── HR / zones — use calibrated zones from FitnessCache if available ──
   const maxHR = profile?.maxHeartRate ?? fitnessCache?.maxHR ?? 190;
   const restHR = profile?.restingHeartRate ?? garminRecent.at(-1)?.restingHR ?? fitnessCache?.restHR ?? 50;
-  const hrZones = buildHRZones(maxHR, restHR);
+  const hrZones: HRZones = fitnessCache?.zones
+    ? { ...(fitnessCache.zones as HRZones), maxHR, restHR }
+    : buildHRZones(maxHR, restHR);
   const hrZoneRanges: [number, number][] = [
     hrZones.z1, hrZones.z2, hrZones.z3, hrZones.z4, hrZones.z5,
   ];

@@ -13,7 +13,7 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
-import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces, estimateZonesFromStatisticalAnalysis, MAXHR_ARTIFACT_CAP } from "./zones";
+import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces, estimateZonesFromStatisticalAnalysis, ensureValidZones, MAXHR_ARTIFACT_CAP } from "./zones";
 import { estimateVO2max, buildHRPaceRegressionParams, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace, gradeAdjustedPace, type RacePB } from "./vo2max";
 import { computeTSS, buildLoadCurve, computeACWR } from "./training-load";
 import { RACE_DISTANCES } from "./paces";
@@ -175,6 +175,7 @@ export async function updateVO2maxAndPaces(userId: string) {
     zoneSecondsJson,
     polarisationJson: polarisationJson ?? undefined,
     predictionsJson,
+    vo2maxBreakdownJson: vo2maxResult.breakdown ?? {},
   };
 
   await prisma.fitnessCache.upsert({
@@ -209,8 +210,8 @@ export async function updateHRZones(userId: string) {
   const cleanMaxHRs = maxHRs.filter(h => h <= MAXHR_ARTIFACT_CAP);
   const sortedCleanMaxHRs = [...cleanMaxHRs].sort((a, b) => a - b);
   const observedMax = sortedCleanMaxHRs.length > 0
-    ? sortedCleanMaxHRs[Math.floor(sortedCleanMaxHRs.length * 0.90)] // 90th percentile of clean values
-    : 185;
+    ? sortedCleanMaxHRs[Math.floor(sortedCleanMaxHRs.length * 0.80)] // 80th percentile of clean values
+    : 183;
 
   const raceMaxHRs = (activities as Act[])
     .filter(a => a.isRace || /tävl|race|lopp|mila|stafett|sic\b|parkrun/i.test(a.name ?? ""))
@@ -232,7 +233,7 @@ export async function updateHRZones(userId: string) {
     .map(a => a.maxHeartrate!);
   const hardRunClean = [...hardRunMaxHRs].sort((a,b)=>a-b);
   const statisticalMax = hardRunClean.length >= 5
-    ? hardRunClean[Math.floor(hardRunClean.length * 0.85)]  // 85th pct of clean hard-run maxHRs
+    ? hardRunClean[Math.floor(hardRunClean.length * 0.70)]  // 70th pct — conservative, avoids occasional outliers
     : null;
 
   // Priority for BUTTON-PRESS estimation:
@@ -299,6 +300,12 @@ export async function updateHRZones(userId: string) {
     console.log(`[zones] Statistical analysis applied: LT1=${statResult.lt1HR}bpm LT2=${statResult.lt2HR}bpm R²=${statResult.rSquared} (${statResult.bucketCount} buckets)`);
   } else if (statResult) {
     console.log(`[zones] Statistical analysis insufficient: R²=${statResult.rSquared} (${statResult.bucketCount} buckets) — using race-PB method`);
+  }
+
+  // Final guard: if estimation produced non-monotonic zones, fall back to fixed percentages
+  if (!ensureValidZones(hrZones)) {
+    console.warn("[zones] Estimated zones failed validation — falling back to buildHRZones()");
+    hrZones = buildHRZones(maxHR, restHR);
   }
 
   const thresholdHR = Math.round((hrZones.z4[0] + hrZones.z4[1]) / 2);

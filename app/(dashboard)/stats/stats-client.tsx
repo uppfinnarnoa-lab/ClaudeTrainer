@@ -608,19 +608,19 @@ function HRZoneTable({ hrZones, ltBounds }: {
         </tbody>
       </table>
 
-      {/* LT2 / LT1 section */}
+      {/* LT1 / LT2 section — physiological order: LT1 (lower) first, LT2 (higher) second */}
       <div className="border-t border-border bg-surface-2 px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT2 — Lactate Threshold</p>
-          <p className="font-mono font-semibold text-primary">{ltBounds.lt2} bpm</p>
-          <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-warning">{ltBounds.ltTrainingRange[0]}–{ltBounds.ltTrainingRange[1]} bpm</span></p>
-          <p className="text-xs text-muted mt-0.5">Threshold intervals (4×10 min), tempo runs</p>
-        </div>
         <div>
           <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT1 — Aerobic Threshold</p>
           <p className="font-mono font-semibold text-primary">{ltBounds.lt1} bpm</p>
           <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-accent">{ltBounds.atTrainingRange[0]}–{ltBounds.atTrainingRange[1]} bpm</span></p>
-          <p className="text-xs text-muted mt-0.5">Long runs, distans, marathon pace</p>
+          <p className="text-xs text-muted mt-0.5">Long runs, distanspass, maratontempos — håll under för lätta pass</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT2 — Lactate Threshold</p>
+          <p className="font-mono font-semibold text-primary">{ltBounds.lt2} bpm</p>
+          <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-warning">{ltBounds.ltTrainingRange[0]}–{ltBounds.ltTrainingRange[1]} bpm</span></p>
+          <p className="text-xs text-muted mt-0.5">Threshold intervals (4×10 min), tempopass</p>
         </div>
       </div>
     </div>
@@ -721,7 +721,7 @@ function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult }) {
           <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT1 — Aerob tröskel</p>
           <p className="text-2xl font-semibold font-mono text-primary">{sz.lt1HR} <span className="text-sm text-muted font-normal">bpm</span></p>
           <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)}/km (GAP)</p>
-          <p className="text-xs text-muted">Z1/Z2-gräns — håll under för lätta pass</p>
+          <p className="text-xs text-muted">Z2/Z3-gräns — lätta pass hålls under denna gräns</p>
         </div>
         <div className="space-y-1">
           <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT2 — Laktattröskel</p>
