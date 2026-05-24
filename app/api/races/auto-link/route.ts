@@ -9,7 +9,7 @@ export async function POST() {
   const userId = session.user.id;
 
   type UnlinkedRow = { id: string; date: Date; distanceM: number };
-  type ActivityRow = { stravaId: string; startDate: Date; distance: number };
+  type ActivityRow = { stravaId: bigint; startDate: Date; distance: number };
   // Load all unlinked race records
   const unlinked = (await prisma.raceRecord.findMany({
     where: { userId, stravaActivityId: null },
@@ -44,11 +44,12 @@ export async function POST() {
     });
 
     if (candidates.length === 1) {
+      const stravaActivityId = candidates[0].stravaId.toString();
       await prisma.raceRecord.update({
         where: { id: record.id },
-        data: { stravaActivityId: candidates[0].stravaId },
+        data: { stravaActivityId },
       });
-      updates.push({ id: record.id, stravaActivityId: candidates[0].stravaId });
+      updates.push({ id: record.id, stravaActivityId });
     }
   }
 

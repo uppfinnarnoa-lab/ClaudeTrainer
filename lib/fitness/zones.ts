@@ -504,6 +504,17 @@ export function buildPaceZones(vdot: number): PaceZones {
   };
 }
 
+export function buildPaceZonesFromLT(lt1PaceSecPerKm: number, lt2PaceSecPerKm: number): PaceZones {
+  return {
+    easy:       [lt1PaceSecPerKm * 1.30, lt1PaceSecPerKm * 1.08],
+    marathon:   [lt1PaceSecPerKm * 1.08, lt1PaceSecPerKm],
+    threshold:  [lt1PaceSecPerKm, lt2PaceSecPerKm],
+    interval:   [lt2PaceSecPerKm, lt2PaceSecPerKm * 0.95],
+    repetition: [lt2PaceSecPerKm * 0.95, lt2PaceSecPerKm * 0.85],
+    vdot: 0,
+  };
+}
+
 // Convert VDOT to velocity at VO2max (m/s).
 // Approximation: VO2 = 0.000104v³ - 0.182258v² + 4.6v - 4.31 (Daniels)
 // Invert numerically.

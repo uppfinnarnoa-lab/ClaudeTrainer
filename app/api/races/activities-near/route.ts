@@ -17,7 +17,6 @@ export async function GET(req: NextRequest) {
   const activities = await prisma.activity.findMany({
     where: {
       userId: session.user.id,
-      sportType: { in: ["Run", "TrailRun", "VirtualRun"] },
       startDate: { gte: subDays(center, 3), lte: addDays(center, 3) },
       // Exclude warm-up and cool-down segments
       NOT: { name: { contains: "warm", mode: "insensitive" } },

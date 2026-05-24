@@ -190,6 +190,16 @@ export function RacesClient({ records: initialRecords, perfTrend = [] }: Props) 
                     {pb.eventName ?? "Tävling"} · {format(parseISO(pb.date), "d MMM yyyy")}
                   </p>
                 </div>
+                {pb.stravaActivityId && (
+                  <a
+                    href={`https://www.strava.com/activities/${pb.stravaActivityId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-lg text-muted hover:text-accent hover:bg-surface-2 transition"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                )}
                 <button
                   onClick={() => setEditRecord(pb)}
                   className="p-2 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition"

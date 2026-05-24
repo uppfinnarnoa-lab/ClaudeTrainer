@@ -171,14 +171,16 @@ export function FitnessMetrics({ vo2max, paceZones, todayLoad, predictions, acwr
                   )}
                 >
                   {model}
-                  <span className="ml-1.5 font-mono text-[10px] opacity-70">VDOT {vdot}</span>
+                  <span className="ml-1.5 font-mono text-[10px] opacity-70">{vdot < 2 ? `exp ${vdot.toFixed(3)}` : `VDOT ${vdot}`}</span>
                 </button>
               ))}
             </div>
             {selectedModel !== "Weighted (default)" && (
               <p className="text-[10px] text-muted">
-                Showing raw output from <strong>{selectedModel}</strong> model only — no weighting applied.
-                VDOT {modelVdots[selectedModel]?.toFixed(1)} vs weighted {vo2max.vdot.toFixed(1)}.
+                {(modelVdots[selectedModel] ?? 0) < 2
+                  ? <>Showing <strong>{selectedModel}</strong> predictions — exponent {(modelVdots[selectedModel] ?? 0).toFixed(3)} based on your weekly running volume.</>
+                  : <>Showing raw output from <strong>{selectedModel}</strong> model only — no weighting applied. VDOT {modelVdots[selectedModel]?.toFixed(1)} vs weighted {vo2max.vdot.toFixed(1)}.</>
+                }
               </p>
             )}
           </div>

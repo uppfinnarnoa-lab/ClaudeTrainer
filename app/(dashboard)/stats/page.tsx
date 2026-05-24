@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { StatsClient } from "./stats-client";
-import { buildHRZones, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis, type HRZones } from "@/lib/fitness/zones";
+import { buildHRZones, buildPaceZones, buildPaceZonesFromLT, estimateLTFromRaces, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis, type HRZones } from "@/lib/fitness/zones";
 import { computeTSS, buildLoadCurve, computeACWR } from "@/lib/fitness/training-load";
 import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace } from "@/lib/fitness/vo2max";
 import { RACE_DISTANCES } from "@/lib/fitness/paces";
@@ -121,6 +121,10 @@ export default async function StatsPage() {
       method: fitnessCache.method,
     };
     const paceZones = buildPaceZones(fitnessCache.vdot);
+    const ltFast = estimateLTFromRaces(racePBs, maxHR, restHR);
+    const effectivePaceZones = ltFast.source === "race-pbs" && ltFast.lt1PaceSecPerKm > 0 && ltFast.lt2PaceSecPerKm > 0
+      ? buildPaceZonesFromLT(ltFast.lt1PaceSecPerKm, ltFast.lt2PaceSecPerKm)
+      : paceZones;
     const acwr = fitnessCache.acwr ?? null;
 
     // Build sparklines from cached weekly volumes
@@ -167,11 +171,11 @@ export default async function StatsPage() {
     for (const a of recentForCurve) {
       if (!a.averageSpeed || a.startDate < twelveWeeksAgoFast || !/run|trail/i.test(a.sportType ?? "")) continue;
       const pace = 1000 / a.averageSpeed;
-      if (pace >= paceZones.easy[0])           fastPaceZoneSeconds.easy      += a.movingTime;
-      else if (pace >= paceZones.marathon[0])  fastPaceZoneSeconds.marathon   += a.movingTime;
-      else if (pace >= paceZones.threshold[0]) fastPaceZoneSeconds.threshold  += a.movingTime;
-      else if (pace >= paceZones.interval[0])  fastPaceZoneSeconds.interval   += a.movingTime;
-      else                                     fastPaceZoneSeconds.repetition += a.movingTime;
+      if (pace >= effectivePaceZones.easy[0])           fastPaceZoneSeconds.easy      += a.movingTime;
+      else if (pace >= effectivePaceZones.marathon[0])  fastPaceZoneSeconds.marathon   += a.movingTime;
+      else if (pace >= effectivePaceZones.threshold[0]) fastPaceZoneSeconds.threshold  += a.movingTime;
+      else if (pace >= effectivePaceZones.interval[0])  fastPaceZoneSeconds.interval   += a.movingTime;
+      else                                              fastPaceZoneSeconds.repetition += a.movingTime;
     }
 
     // Per-model predictions from the cached VO2max breakdown
@@ -190,6 +194,24 @@ export default async function StatsPage() {
         RACE_DISTANCES.map(({ label, meters }) => ({ label, meters, peak: predictRaceTime(vdot, meters) })),
       ])
     );
+
+    // Volume-Adjusted Riegel (Alex Gascón model)
+    const varAnchorFast = racePBs.reduce<{ timeSec: number; distanceM: number; date: Date } | null>((best, p) => {
+      if (!best) return p;
+      return vdotFromRace(p.distanceM, p.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? p : best;
+    }, null);
+    const avgWeeklyRunKmFast = Array.from({ length: 8 }, (_, i) => {
+      const wkStart = startOfWeek(subDays(now, (7 - i) * 7), { weekStartsOn: 1 });
+      const key = format(wkStart, "yyyy-MM-dd");
+      return (weeklyVolumes[key]?.["Running"] ?? { km: 0 }).km;
+    }).reduce((s, v) => s + v, 0) / 8;
+    const varDFast = Math.max(1.05, Math.min(1.18, 1.18 - 0.0015 * avgWeeklyRunKmFast));
+    if (varAnchorFast) {
+      fastModelVdots["Volume-Adjusted Riegel"] = varDFast;
+      fastModelPredictions["Volume-Adjusted Riegel"] = RACE_DISTANCES.map(({ label, meters }) => ({
+        label, meters, peak: riegelPredict(varAnchorFast.timeSec, varAnchorFast.distanceM, meters, varDFast),
+      }));
+    }
 
     // Compute analytics from recentForCurve (24-week data already fetched)
     const fpLt1HR = hrZones.z3[0];
@@ -239,7 +261,7 @@ export default async function StatsPage() {
     };
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-      fastZoneSeconds, hrZones, vo2max, paceZones, predictions, fastPolarisation, acwr,
+      fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
       null, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, null);
   }
 
@@ -286,6 +308,10 @@ export default async function StatsPage() {
     computedMaxHR, restHR, racePBs,
   );
   const paceZones = buildPaceZones(vo2max.vdot);
+  const ltSlow = estimateLTFromRaces(racePBs, computedMaxHR, restHR);
+  const effectivePaceZones = ltSlow.source === "race-pbs" && ltSlow.lt1PaceSecPerKm > 0 && ltSlow.lt2PaceSecPerKm > 0
+    ? buildPaceZonesFromLT(ltSlow.lt1PaceSecPerKm, ltSlow.lt2PaceSecPerKm)
+    : paceZones;
 
   const dailyTSSMap = new Map<string, number>();
   for (const a of activities) {
@@ -321,11 +347,11 @@ export default async function StatsPage() {
   const paceZoneSeconds: Record<string, number> = { easy: 0, marathon: 0, threshold: 0, interval: 0, repetition: 0 };
   for (const a of activities.filter((x: A) => x.startDate >= twelveWeeksAgo && x.averageSpeed && /run|trail/i.test(x.sportType))) {
     const pace = 1000 / a.averageSpeed!;
-    if (pace >= paceZones.easy[0])           paceZoneSeconds.easy      += a.movingTime;
-    else if (pace >= paceZones.marathon[0])  paceZoneSeconds.marathon   += a.movingTime;
-    else if (pace >= paceZones.threshold[0]) paceZoneSeconds.threshold  += a.movingTime;
-    else if (pace >= paceZones.interval[0])  paceZoneSeconds.interval   += a.movingTime;
-    else                                     paceZoneSeconds.repetition += a.movingTime;
+    if (pace >= effectivePaceZones.easy[0])           paceZoneSeconds.easy      += a.movingTime;
+    else if (pace >= effectivePaceZones.marathon[0])  paceZoneSeconds.marathon   += a.movingTime;
+    else if (pace >= effectivePaceZones.threshold[0]) paceZoneSeconds.threshold  += a.movingTime;
+    else if (pace >= effectivePaceZones.interval[0])  paceZoneSeconds.interval   += a.movingTime;
+    else                                              paceZoneSeconds.repetition += a.movingTime;
   }
 
   const sparklines = Array.from({ length: 8 }, (_, i) => {
@@ -389,6 +415,27 @@ export default async function StatsPage() {
       })),
     ])
   );
+
+  // Volume-Adjusted Riegel (Alex Gascón model)
+  const varAnchor = racePBs.reduce<{ timeSec: number; distanceM: number; date: Date } | null>((best, p) => {
+    if (!best) return p;
+    return vdotFromRace(p.distanceM, p.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? p : best;
+  }, null);
+  const eightWeeksAgo = subDays(now, 56);
+  const weeklyRunKmMap = new Map<string, number>();
+  for (const a of activities as A[]) {
+    if (!/run|trail/i.test(a.sportType) || a.startDate < eightWeeksAgo) continue;
+    const wk = format(startOfWeek(a.startDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    weeklyRunKmMap.set(wk, (weeklyRunKmMap.get(wk) ?? 0) + a.distance / 1000);
+  }
+  const avgWeeklyRunKm = [...weeklyRunKmMap.values()].reduce((s, v) => s + v, 0) / 8;
+  const varD = Math.max(1.05, Math.min(1.18, 1.18 - 0.0015 * avgWeeklyRunKm));
+  if (varAnchor) {
+    modelVdots["Volume-Adjusted Riegel"] = varD;
+    modelPredictions["Volume-Adjusted Riegel"] = RACE_DISTANCES.map(({ label, meters }) => ({
+      label, meters, peak: riegelPredict(varAnchor.timeSec, varAnchor.distanceM, meters, varD),
+    }));
+  }
 
   const lt = ltBoundaries(computedHrZones);
   let polZ1 = 0, polZ2 = 0, polZ3 = 0;
@@ -628,7 +675,7 @@ export default async function StatsPage() {
   );
 
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, computedHrZones, vo2max, paceZones, predictions, polarisation, acwr, statZones, overviewRun,
+    zoneSeconds, computedHrZones, vo2max, effectivePaceZones, predictions, polarisation, acwr, statZones, overviewRun,
     { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
     modelPredictions, modelVdots,
     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear });

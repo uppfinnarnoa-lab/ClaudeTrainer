@@ -201,7 +201,7 @@ export async function updateHRZones(userId: string) {
       where: { userId, date: { gte: subDays(new Date(), 7) } },
       orderBy: { date: "asc" }, select: { restingHR: true },
     }),
-    prisma.fitnessCache.findUnique({ where: { userId }, select: { restHR: true } }),
+    prisma.fitnessCache.findUnique({ where: { userId }, select: { restHR: true, tsb: true } }),
   ]);
 
   const maxHRs = (activities as Act[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
@@ -322,6 +322,18 @@ export async function updateHRZones(userId: string) {
   );
   const paceZones = buildPaceZones(vo2maxResult.vdot);
 
+  const anchorPB = racePBs.reduce<RacePB | null>((best, p) => {
+    if (!best) return p;
+    return vdotFromRace(p.distanceM, p.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? p : best;
+  }, null);
+  const cachedTsb = existingCacheForZones?.tsb ?? 0;
+  const predictionsJson = RACE_DISTANCES.map(({ label, meters }) => {
+    const peak = predictRaceTime(vo2maxResult.vdot, meters);
+    const riegel = anchorPB ? riegelPredict(anchorPB.timeSec, anchorPB.distanceM, meters) : null;
+    const range = predictionRange(peak, meters);
+    return { label, meters, peak, today: tsbAdjustedRaceTime(peak, cachedTsb), riegel, rangeLo: range.lo, rangeHi: range.hi };
+  });
+
   // Recompute zone distribution with the newly calibrated zones so charts update immediately
   const twelveWeeksAgo = subDays(new Date(), 84);
   type ZoneMap2 = { z1:[number,number]; z2:[number,number]; z3:[number,number]; z4:[number,number]; z5:[number,number] };
@@ -350,11 +362,13 @@ export async function updateHRZones(userId: string) {
       vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot,
       confidence: vo2maxResult.confidence, method: vo2maxResult.method,
       paces: pacesJson(paceZones), zoneSecondsJson, polarisationJson: polarisationJson ?? undefined,
+      predictionsJson, vo2maxBreakdownJson: vo2maxResult.breakdown ?? {},
     },
     update: { maxHR, restHR, thresholdHR, zones: zonesJson,
       vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot,
       confidence: vo2maxResult.confidence, method: vo2maxResult.method,
       paces: pacesJson(paceZones), zoneSecondsJson, polarisationJson: polarisationJson ?? undefined,
+      predictionsJson, vo2maxBreakdownJson: vo2maxResult.breakdown ?? {},
     },
   });
 
