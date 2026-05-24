@@ -1581,6 +1581,17 @@ GOOGLE_AI_API_KEY=""
 - `zones.ts`: `buildHRZonesFromLT()` — non-uniform zone boundaries anchored to LT1/LT2
 - `context-builder.ts`: race PBs now included in AI coach system prompt
 
+**Session 2026-05-24 (Ny promot.md):**
+- `zones.ts`: `buildPaceZonesFromLT(lt1, lt2)` — LT-anchored pace zones; Z1 > LT1×1.08, Z2 LT1×1.08–LT1, Z3 LT1–LT2, Z4 LT2–LT2×0.95, Z5 < LT2×0.95
+- `stats/page.tsx`: LT-based pace zones now used in both fast and slow paths when race-PB LT estimation succeeds
+- `stats/page.tsx`: Volume-Adjusted Riegel model (Alex Gascón) added to predictions dropdown; exponent d = clamp(1.18 − 0.0015 × avgWeeklyRunKm, 1.05, 1.18) from 8-week running volume
+- `fitness-metrics.tsx`: model selector shows `exp X.XXX` instead of `VDOT X` for Volume-Adjusted Riegel; note text explains the exponent
+- `cache.ts` `updateHRZones()`: now saves `predictionsJson` and `vo2maxBreakdownJson` so model selector works after manual calibration
+- `api/races/activities-near/route.ts`: removed sport type filter — all sports returned, enabling linking for cycling/skiing/OL races
+- `api/races/auto-link/route.ts`: fixed BigInt serialization crash — `stravaId` typed as `bigint` and converted with `.toString()`
+- `races-client.tsx`: ExternalLink icon added to PB card when `stravaActivityId` is set; auto-link button and per-row unlink button added
+- `docs/fitness/hr_zones_current.md`: moved from `docs/planning/` to `docs/fitness/`
+
 ### Documentation Written
 - `docs/api/auth.md` — auth + settings endpoints
 - `docs/api/strava.md` — sync endpoint
