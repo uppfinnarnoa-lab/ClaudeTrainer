@@ -14,8 +14,11 @@ interface Props {
 }
 
 export function WorkoutPill({ workout, isPast, onClick, compact }: Props) {
+  const today = new Date().toISOString().split("T")[0];
+  const canDrag = workout.date >= today;
+
   function handleDragStart(e: React.DragEvent) {
-    if (isPast) { e.preventDefault(); return; }
+    if (!canDrag) { e.preventDefault(); return; }
     e.dataTransfer.setData("workoutId", workout.id);
     e.dataTransfer.effectAllowed = "move";
     e.stopPropagation();
@@ -30,7 +33,7 @@ export function WorkoutPill({ workout, isPast, onClick, compact }: Props) {
 
   return (
     <button
-      draggable={!isPast}
+      draggable={canDrag}
       onDragStart={handleDragStart}
       onClick={e => { e.stopPropagation(); onClick(workout); }}
       className={cn(

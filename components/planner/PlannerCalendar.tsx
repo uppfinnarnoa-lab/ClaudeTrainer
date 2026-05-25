@@ -171,12 +171,12 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, 
                     <div
                       key={key}
                       onClick={() => onDayClick(key)}
-                      onDragOver={e => { if (isPast) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverDate(key); }}
+                      onDragOver={e => { if (key < today) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverDate(key); }}
                       onDragLeave={() => setDragOverDate(null)}
                       onDrop={e => {
                         e.preventDefault();
                         setDragOverDate(null);
-                        if (isPast) return;
+                        if (key < today) return;
                         const templateId = e.dataTransfer.getData("templateId");
                         const workoutId  = e.dataTransfer.getData("workoutId");
                         if (workoutId && onWorkoutMove) onWorkoutMove(workoutId, key);
@@ -191,7 +191,7 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, 
                           : "border-transparent hover:border-border hover:bg-surface",
                         !isCurrentMonth && "opacity-35"
                       )}
-                      style={blockHere && !isDragOver ? { backgroundColor: `${blockHere.color}0D` } : undefined}
+                      style={blockHere && !isDragOver ? { backgroundColor: `${blockHere.color}22` } : undefined}
                     >
                       {/* Day number */}
                       <div className="mb-1">

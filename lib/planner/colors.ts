@@ -37,17 +37,20 @@ export function workoutColor(sportName: string, typeName?: string | null): strin
   const s = sportName.toLowerCase();
   const t = (typeName ?? "").toLowerCase();
 
+  // Competition / race / tävling → yellow for ANY sport
+  if (/tävl|race|lopp|mila|stafett|sic\b|2dagars|competition|comp\b/.test(t)) return "#FBBF24";
+
   // Non-running sports → colour by sport
   if (/cycl|ride|cykel|bike/.test(s)) return "#FB923C";       // orange
   if (/orienteer|ol\b/.test(s))        return "#14B8A6";       // teal (distinct from tempo)
-  if (/strength|styrka|gym|weight/.test(s)) return "#F97316";  // amber
+  if (/strength|styrka|gym|weight/.test(s)) return "#D97706";  // amber (distinct from orange)
   if (/nordicski|klassisk|backcountry|längdski/.test(s)) return "#BAE6FD"; // ice blue
   if (/rollerski|rullski/.test(s))     return "#38BDF8";       // sky blue
   if (/swim|sim/.test(s))              return "#60A5FA";       // blue
 
   // Running (and trail run, virtual run) → colour by type
   if (/run|trail|virtual/.test(s)) {
-    if (/tävl|race|lopp|mila|stafett|sic\b|2dagars/.test(t))                    return "#FBBF24"; // yellow  — race
+    if (/tävl|race|lopp|mila|stafett|sic\b|2dagars|competition|comp\b/.test(t)) return "#FBBF24"; // yellow  — race
     if (/\bat\b|aerob tröskel|aerobic threshold/.test(t))                         return "#818CF8"; // lila    — AT  (check before LT)
     if (/\blt\b|tröskel|threshold|lång tröskel|lactate/.test(t))                  return "#F472B6"; // rosa    — LT
     if (/\btempo\b/.test(t))                                                       return "#2DD4BF"; // grönturkos — Tempo

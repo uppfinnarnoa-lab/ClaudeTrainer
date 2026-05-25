@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { z } from "zod";
+import { updateHRZones } from "@/lib/fitness/cache";
 
 const schema = z.object({
   name:            z.string().max(100).optional().nullable(),
@@ -44,6 +45,11 @@ export async function POST(req: NextRequest) {
       },
     }),
   ]);
+
+  // When HR limits are manually set, recalibrate zones immediately so stats reflect the override
+  if (parsed.data.maxHeartRate !== undefined || parsed.data.restingHeartRate !== undefined) {
+    updateHRZones(session.user.id).catch(e => console.error("[profile] HR recalibration error:", e));
+  }
 
   return NextResponse.json({ ok: true });
 }
