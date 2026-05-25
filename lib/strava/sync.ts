@@ -32,6 +32,7 @@ function mapActivity(raw: any, userId: string) {
     splitsMetric: raw.splits_metric ?? null,
     laps: raw.laps ?? null,
     bestEfforts: raw.best_efforts ?? null,
+    splitDetailFetched: false, // overridden to true when fetched from detail endpoint
   };
 }
 
@@ -75,18 +76,19 @@ export async function syncActivities(
         });
 
         let fullRaw = raw;
+        let detailFetched = false;
         if (!exists) {
           // New activity — fetch individually to get description, splits, best efforts
           try {
             fullRaw = await stravaFetch(userId, `/activities/${raw.id}`);
+            detailFetched = true;
             await new Promise(r => setTimeout(r, 300)); // rate limit safety
           } catch {
-            // Fall back to list data if individual fetch fails
             fullRaw = raw;
           }
         }
 
-        const data = mapActivity(fullRaw, userId);
+        const data = { ...mapActivity(fullRaw, userId), splitDetailFetched: detailFetched };
         await prisma.activity.upsert({
           where: { stravaId: data.stravaId },
           create: data,

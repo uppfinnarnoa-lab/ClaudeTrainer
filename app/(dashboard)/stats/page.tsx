@@ -262,7 +262,8 @@ export default async function StatsPage() {
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
-      null, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, null);
+      null, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, null,
+      fitnessCache.decouplingLt1HR ?? null);
   }
 
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
@@ -678,7 +679,8 @@ export default async function StatsPage() {
     zoneSeconds, computedHrZones, vo2max, effectivePaceZones, predictions, polarisation, acwr, statZones, overviewRun,
     { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
     modelPredictions, modelVdots,
-    { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear });
+    { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear },
+    fitnessCache?.decouplingLt1HR ?? null);
 }
 
 // Shared render — used by both fast and slow paths
@@ -721,6 +723,7 @@ function renderStats(
     terrainFactor: { olPaceSecPerKm: number; roadPaceSecPerKm: number; olSessions: number; roadSessions: number } | null;
     perfByDistYear: { distance: string; period: string; time: number }[];
   } | null,
+  decouplingLt1HR?: number | null,
 ) {
   return (
     <div className="space-y-2">
@@ -749,6 +752,7 @@ function renderStats(
         modelPredictions={modelPredictions ?? {}}
         modelVdots={modelVdots ?? {}}
         extraViz={extraViz ?? null}
+        decouplingLt1HR={decouplingLt1HR ?? null}
       />
     </div>
   );

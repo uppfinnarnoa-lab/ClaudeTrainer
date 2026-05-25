@@ -15,6 +15,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces, estimateZonesFromStatisticalAnalysis, ensureValidZones, MAXHR_ARTIFACT_CAP } from "./zones";
 import { estimateVO2max, buildHRPaceRegressionParams, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace, gradeAdjustedPace, personalizedFatigueExponent, type RacePB } from "./vo2max";
+import { estimateLT1FromDecoupling } from "./decoupling";
 import { computeTSS, buildLoadCurve, computeACWR } from "./training-load";
 import { RACE_DISTANCES } from "./paces";
 import { subDays, format, startOfWeek } from "date-fns";
@@ -162,6 +163,14 @@ export async function updateVO2maxAndPaces(userId: string) {
   const personalK = personalizedFatigueExponent(allBestEfforts);
   const riegelExponent = personalK !== null ? (1 - personalK) : 1.06;
 
+  // ── Aerobic decoupling LT1 (parallel estimate) ────────────────────────
+  // Separate query — avoids loading large splitsMetric JSON for all activities.
+  const decouplingRuns = await prisma.activity.findMany({
+    where: { userId, splitDetailFetched: true, movingTime: { gte: 2700 }, distance: { gte: 7000 } },
+    select: { splitsMetric: true, movingTime: true, distance: true, totalElevationGain: true },
+  });
+  const decouplingResult = estimateLT1FromDecoupling(decouplingRuns, maxHR);
+
   const predictionsJson = RACE_DISTANCES.map(({ label, meters }) => {
     const peak = predictRaceTime(vo2maxResult.vdot, meters);
     const riegel = anchorPB ? riegelPredict(anchorPB.timeSec, anchorPB.distanceM, meters, riegelExponent) : null;
@@ -185,6 +194,8 @@ export async function updateVO2maxAndPaces(userId: string) {
     polarisationJson: polarisationJson ?? undefined,
     predictionsJson,
     vo2maxBreakdownJson: vo2maxResult.breakdown ?? {},
+    decouplingLt1HR:   decouplingResult?.lt1HR    ?? undefined,
+    decouplingRunsUsed: decouplingResult?.runsUsed ?? undefined,
   };
 
   await prisma.fitnessCache.upsert({

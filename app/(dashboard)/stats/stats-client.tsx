@@ -54,6 +54,7 @@ interface Props {
   paceZoneSeconds: Record<string, number>;
   modelPredictions: Record<string, { label: string; meters: number; peak: number }[]>;
   modelVdots: Record<string, number>;
+  decouplingLt1HR: number | null;
   extraViz: {
     heatmapData: { week: string; km: number }[];
     monthlyOverlay: { month: string; year: number; km: number }[];
@@ -77,7 +78,7 @@ export function StatsClient(props: Props) {
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics, paceZoneSeconds,
-    modelPredictions, modelVdots, extraViz } = props;
+    modelPredictions, modelVdots, extraViz, decouplingLt1HR } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -244,7 +245,7 @@ export function StatsClient(props: Props) {
           {polarisation && <PolarisationCard pol={polarisation} zoneSeconds={zoneSeconds} />}
 
           {/* HR zone table with LT/AT boundaries */}
-          <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} />
+          <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} decouplingLt1HR={decouplingLt1HR} />
         </div>
       )}
 
@@ -563,9 +564,10 @@ const ZONE_META = [
   { key: "z5", label: "Z5", name: "VO2max",    color: "#EF4444", purpose: "Above LT2 — develops top-end aerobic power" },
 ];
 
-function HRZoneTable({ hrZones, ltBounds }: {
+function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR }: {
   hrZones: HRZones;
   ltBounds: { lt1: number; lt2: number; ltTrainingRange: [number, number]; atTrainingRange: [number, number] };
+  decouplingLt1HR?: number | null;
 }) {
   const zones: Record<string, [number, number]> = {
     z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5,
@@ -621,6 +623,39 @@ function HRZoneTable({ hrZones, ltBounds }: {
           <p className="font-mono font-semibold text-primary">{ltBounds.lt2} bpm</p>
           <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-warning">{ltBounds.ltTrainingRange[0]}–{ltBounds.ltTrainingRange[1]} bpm</span></p>
           <p className="text-xs text-muted mt-0.5">Threshold intervals (4×10 min), tempopass</p>
+        </div>
+      </div>
+
+      {/* Parallel LT1 estimates — model comparison */}
+      <div className="border-t border-border px-4 py-3">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">LT1 — parallella estimat</p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted">HR-pace regression (aktiv)</span>
+            <span className="font-mono text-sm font-semibold text-primary">{ltBounds.lt1} bpm</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted">
+              Aerob decoupling
+              {decouplingLt1HR === null && (
+                <span className="ml-1 text-[10px] text-warning">(kräver backfill)</span>
+              )}
+            </span>
+            <span className={`font-mono text-sm font-semibold ${decouplingLt1HR !== null ? "text-primary" : "text-muted"}`}>
+              {decouplingLt1HR !== null ? `${decouplingLt1HR} bpm` : "—"}
+            </span>
+          </div>
+          {decouplingLt1HR != null && (
+            <p className="text-[10px] text-muted pt-0.5">
+              Differens: {decouplingLt1HR - ltBounds.lt1 > 0 ? "+" : ""}{decouplingLt1HR - ltBounds.lt1} bpm
+              {" · "}
+              {Math.abs(decouplingLt1HR - ltBounds.lt1) <= 3
+                ? "Metoderna är i god överensstämmelse."
+                : Math.abs(decouplingLt1HR - ltBounds.lt1) <= 7
+                ? "Liten avvikelse — mer data ger bättre samstämmighet."
+                : "Stor avvikelse — kör backfill för mer träningsdata."}
+            </p>
+          )}
         </div>
       </div>
     </div>

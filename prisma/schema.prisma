@@ -131,9 +131,10 @@ model Activity {
   isRace           Boolean @default(false)
   mapPolyline      String?
 
-  splitsMetric Json?
-  laps         Json?
-  bestEfforts  Json?
+  splitsMetric       Json?
+  laps               Json?
+  bestEfforts        Json?
+  splitDetailFetched Boolean @default(false)
 
   trainingLoad    Float?
   intensityFactor Float?
@@ -353,6 +354,8 @@ model FitnessCache {
   polarisationJson Json?    // { z1Pct, z2Pct, z3Pct } Seiler 3-zone
   predictionsJson      Json?    // [{ label, meters, peak, today, riegel, rangeLo, rangeHi }]
   vo2maxBreakdownJson  Json?    // { modelName: vdot, ... } — per-model VDOT breakdown
+  decouplingLt1HR      Float?   // LT1 from aerobic decoupling (parallel estimate)
+  decouplingRunsUsed   Int?     // how many steady-state runs contributed
   computedAt   DateTime @default(now()) @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
