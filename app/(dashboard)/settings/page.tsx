@@ -8,6 +8,7 @@ import { GarminConnectSection } from "./garmin-connect";
 import { AISettingsSection } from "./ai-settings";
 import { AthleteProfileForm } from "./athlete-profile";
 import { ChangePasswordForm } from "./change-password";
+import { AppearanceSettings } from "./appearance-settings";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -114,6 +115,15 @@ export default async function SettingsPage() {
           primaryGoal: athleteProfile?.primaryGoal,
           yearsTraining: athleteProfile?.yearsTraining,
         }} />
+      </section>
+
+      {/* ── Appearance ── */}
+      <section className="rounded-2xl bg-surface border border-border p-6 space-y-5">
+        <div>
+          <h2 className="font-semibold text-primary">Appearance</h2>
+          <p className="text-xs text-muted mt-0.5">Theme and display preferences</p>
+        </div>
+        <AppearanceSettings />
       </section>
 
       {/* ── Change password ── */}

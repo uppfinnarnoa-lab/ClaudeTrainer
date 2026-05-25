@@ -13,6 +13,7 @@ Se även: [Security Audit](../security/SECURITY_AUDIT_2026_05_26.md)
 - Drag & drop i kalender (inkl. idag)
 - UI-korrigeringar i planner
 - Deployment-säkerhet
+- Temasystem: flera färgscheman med light/dark-variant per tema
 
 ---
 
@@ -26,6 +27,7 @@ Se även: [Security Audit](../security/SECURITY_AUDIT_2026_05_26.md)
 | ✅ | Block-bakgrundsfärg synligare (opacity `0D` → `22`) | `components/planner/PlannerCalendar.tsx` |
 | ✅ | Drag-and-drop tillåter idag (ej bara framtid) | `PlannerCalendar.tsx`, `WorkoutPill.tsx` |
 | ✅ | Manuell maxHR/restHR triggar omedelbar recalibrering | `app/api/settings/profile/route.ts` |
+| ✅ | Light/dark/system-toggle tillagd i Settings → Appearance | `app/(dashboard)/settings/appearance-settings.tsx` |
 
 ---
 
@@ -276,6 +278,213 @@ export function estimateCriticalSpeed(
 ```
 - Integreras i `cache.ts` → spara `criticalSpeedMs` i `FitnessCache`
 - Visas i `HRZoneTable` på stats-sidan som "Critical Speed (LT2-proxy)"
+
+---
+
+---
+
+### P10 — Temasystem: färgscheman med light/dark per tema
+
+**Nuläge (efter fix):** Light/dark/system-toggle finns i Settings → Appearance och i sidebar-botten.
+
+**Mål:** Användaren väljer ett av 4 färgscheman (t.ex. Forest, Ocean, Ember, Mono) — varje schema har en light- och dark-variant. Valet sparas persistent.
+
+---
+
+#### Arkitektur
+
+**Två oberoende dimensioner:**
+- `colorScheme`: vilket färgschema (`forest` | `ocean` | `ember` | `mono`)
+- `mode`: light/dark/system (hanteras av `next-themes` precis som nu)
+
+**Lagring:**
+- `colorScheme` sparas i `localStorage` (`traininglab_scheme`)
+- `mode` sparas redan av `next-themes` i `localStorage` (`theme`)
+- Synkas INTE med DB — rent klient-state
+
+---
+
+#### CSS-struktur (`app/globals.css`)
+
+```css
+/* ── Tema: Forest (standard — befintlig) ─────────────────── */
+:root,
+.scheme-forest {
+  --background:   #F8FAFC;
+  --surface:      #FFFFFF;
+  --surface-2:    #F1F5F9;
+  --border:       #E2E8F0;
+  --accent:       #059669;   /* emerald */
+  --accent-2:     #6366F1;
+  --text-primary: #0F172A;
+  --text-muted:   #64748B;
+}
+.dark .scheme-forest,
+.scheme-forest.dark {
+  --background:   #0F1117;
+  --surface:      #1A1D27;
+  --surface-2:    #222534;
+  --border:       #2D3148;
+  --accent:       #6EE7B7;
+  --accent-2:     #818CF8;
+  --text-primary: #F1F5F9;
+  --text-muted:   #94A3B8;
+}
+
+/* ── Tema: Ocean ──────────────────────────────────────────── */
+.scheme-ocean {
+  --background:   #F0F9FF;
+  --surface:      #FFFFFF;
+  --surface-2:    #E0F2FE;
+  --border:       #BAE6FD;
+  --accent:       #0284C7;   /* sky-600 */
+  --accent-2:     #7C3AED;
+  --text-primary: #0C4A6E;
+  --text-muted:   #0369A1;
+}
+.dark .scheme-ocean,
+.scheme-ocean.dark {
+  --background:   #0A1628;
+  --surface:      #0F2340;
+  --surface-2:    #162D50;
+  --border:       #1E3A5F;
+  --accent:       #38BDF8;
+  --accent-2:     #A78BFA;
+  --text-primary: #E0F2FE;
+  --text-muted:   #7DD3FC;
+}
+
+/* ── Tema: Ember ──────────────────────────────────────────── */
+.scheme-ember {
+  --background:   #FFF7ED;
+  --surface:      #FFFFFF;
+  --surface-2:    #FFEDD5;
+  --border:       #FED7AA;
+  --accent:       #EA580C;   /* orange-600 */
+  --accent-2:     #DC2626;
+  --text-primary: #431407;
+  --text-muted:   #9A3412;
+}
+.dark .scheme-ember,
+.scheme-ember.dark {
+  --background:   #1A0A00;
+  --surface:      #2D1200;
+  --surface-2:    #3D1A00;
+  --border:       #5C2800;
+  --accent:       #FB923C;
+  --accent-2:     #F87171;
+  --text-primary: #FED7AA;
+  --text-muted:   #FDBA74;
+}
+
+/* ── Tema: Mono ───────────────────────────────────────────── */
+.scheme-mono {
+  --background:   #FAFAFA;
+  --surface:      #FFFFFF;
+  --surface-2:    #F4F4F5;
+  --border:       #E4E4E7;
+  --accent:       #18181B;   /* zinc-900 */
+  --accent-2:     #52525B;
+  --text-primary: #09090B;
+  --text-muted:   #71717A;
+}
+.dark .scheme-mono,
+.scheme-mono.dark {
+  --background:   #09090B;
+  --surface:      #18181B;
+  --surface-2:    #27272A;
+  --border:       #3F3F46;
+  --accent:       #E4E4E7;
+  --accent-2:     #A1A1AA;
+  --text-primary: #FAFAFA;
+  --text-muted:   #A1A1AA;
+}
+```
+
+**Klass appliceras på `<html>`-taggen** (bredvid `dark`-klassen):
+```tsx
+// Resultat i DOM:
+<html class="dark scheme-ocean">      // Ocean dark
+<html class="scheme-ember">           // Ember light
+<html class="">                       // Forest light (standard)
+```
+
+---
+
+#### React-implementation
+
+**`components/color-scheme-provider.tsx`** (ny fil):
+```tsx
+"use client";
+import { createContext, useContext, useEffect, useState } from "react";
+
+type Scheme = "forest" | "ocean" | "ember" | "mono";
+const SCHEMES: Scheme[] = ["forest", "ocean", "ember", "mono"];
+const KEY = "traininglab_scheme";
+
+const Ctx = createContext<{ scheme: Scheme; setScheme: (s: Scheme) => void }>({
+  scheme: "forest", setScheme: () => {}
+});
+
+export function ColorSchemeProvider({ children }: { children: React.ReactNode }) {
+  const [scheme, setSchemeState] = useState<Scheme>("forest");
+
+  useEffect(() => {
+    const saved = localStorage.getItem(KEY) as Scheme | null;
+    if (saved && SCHEMES.includes(saved)) setSchemeState(saved);
+  }, []);
+
+  function setScheme(s: Scheme) {
+    // Remove old scheme class, add new
+    document.documentElement.classList.remove(...SCHEMES.map(x => `scheme-${x}`));
+    if (s !== "forest") document.documentElement.classList.add(`scheme-${s}`);
+    localStorage.setItem(KEY, s);
+    setSchemeState(s);
+  }
+
+  // Apply on mount
+  useEffect(() => {
+    if (scheme !== "forest") document.documentElement.classList.add(`scheme-${scheme}`);
+  }, [scheme]);
+
+  return <Ctx.Provider value={{ scheme, setScheme }}>{children}</Ctx.Provider>;
+}
+
+export const useColorScheme = () => useContext(Ctx);
+```
+
+**`app/layout.tsx`** — wrap med ColorSchemeProvider:
+```tsx
+<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+  <ColorSchemeProvider>
+    {children}
+  </ColorSchemeProvider>
+</ThemeProvider>
+```
+
+**`app/(dashboard)/settings/appearance-settings.tsx`** — utökas med schema-picker:
+```tsx
+const SCHEME_OPTIONS = [
+  { value: "forest", label: "Forest", preview: { light: "#059669", dark: "#6EE7B7" } },
+  { value: "ocean",  label: "Ocean",  preview: { light: "#0284C7", dark: "#38BDF8" } },
+  { value: "ember",  label: "Ember",  preview: { light: "#EA580C", dark: "#FB923C" } },
+  { value: "mono",   label: "Mono",   preview: { light: "#18181B", dark: "#E4E4E7" } },
+];
+// Visa som en rad av färgcirklar + namn, med aktiv markering
+```
+
+---
+
+#### Filer att skapa/ändra
+
+| Fil | Åtgärd |
+|---|---|
+| `app/globals.css` | Lägg till `.scheme-*` CSS-klasser |
+| `components/color-scheme-provider.tsx` | Ny provider |
+| `app/layout.tsx` | Wrap med ColorSchemeProvider |
+| `app/(dashboard)/settings/appearance-settings.tsx` | Utöka med schema-picker |
+
+**Obs:** Workout-färgerna i `lib/planner/colors.ts` (gul, rosa, teal etc.) är oberoende av temat — de är alltid desamma oavsett valt färgschema.
 
 ---
 
