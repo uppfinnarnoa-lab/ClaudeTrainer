@@ -1,226 +1,305 @@
-# Implementationsplan — 2026-05-26
+# Implementationsplan — Fixes & förbättringar
 
 Se även: [Security Audit](../security/SECURITY_AUDIT_2026_05_26.md)
 
 ---
 
-## Fixar gjorda i denna session
+## Övergripande mål
 
-| # | Vad | Filer |
-|---|---|---|
-| ✅ | Competition/tävling → gul för ALLA sporter i colors.ts | `lib/planner/colors.ts` |
-| ✅ | Svart bar längst ned i planner — ändrat till `md:h-screen` | `app/(dashboard)/planner/page.tsx` |
-| ✅ | Drag-and-drop tillåter idag (ej bara framtid) | `components/planner/PlannerCalendar.tsx`, `WorkoutPill.tsx` |
-| ✅ | Block-bakgrundsfärg synligare (opacity `0D` → `22`) | `components/planner/PlannerCalendar.tsx` |
-| ✅ | Manuell maxHR/restHR i settings triggar omedelbar recalibrering | `app/api/settings/profile/route.ts` |
-| ✅ | Strength-färg ändrad till #D97706 (skild från orange #FB923C) | `lib/planner/colors.ts` |
+- Konsistens i färgsystem och typer (planner / templates / history)
+- Korrekt hantering av HR-inställningar (manuell override)
+- Förbättrad kalender- och template-hantering
+- Utökad flexibilitet i PB-tracking
+- Drag & drop i kalender (inkl. idag)
+- UI-korrigeringar i planner
+- Deployment-säkerhet
 
 ---
 
-## Kan decoupling och HR-pace regression estimera LT2?
+## Genomförda fixes (2026-05-26)
 
-**Kort svar:** Ja för HR-pace regression, nej för decoupling.
+| # | Vad | Filer |
+|---|---|---|
+| ✅ | Competition/tävling → gul för ALLA sporter | `lib/planner/colors.ts` |
+| ✅ | Strength-färg `#F97316` → `#D97706` (särskiljs från Cycling) | `lib/planner/colors.ts` |
+| ✅ | Svart bar längst ned i planner → `md:h-screen` | `app/(dashboard)/planner/page.tsx` |
+| ✅ | Block-bakgrundsfärg synligare (opacity `0D` → `22`) | `components/planner/PlannerCalendar.tsx` |
+| ✅ | Drag-and-drop tillåter idag (ej bara framtid) | `PlannerCalendar.tsx`, `WorkoutPill.tsx` |
+| ✅ | Manuell maxHR/restHR triggar omedelbar recalibrering | `app/api/settings/profile/route.ts` |
 
-**HR-pace regression:**
-LT2 (anaerob tröskel, ~FTP) syns som en deflektionspunkt i HR/pace-kurvan — den punkt där pace-effektiviteten bryter ned snabbt. Den statistiska zonsanalysen i `lib/fitness/zones.ts` (`estimateZonesFromStatisticalAnalysis`) estimerar redan LT1 OCH LT2 via bucketed deflektionspunkter och returnerar `lt2HR`. Denna används för HR-zoners z4-gräns. Alltså: LT2 estimeras redan.
+---
 
-**Aerob decoupling:**
-Decoupling mäter drift i Z2-träningspass (steady-state under LT1). Det säger ingenting om LT2 direkt — det är per definition ett LT1-fenomen. Man kan inte använda decoupling för att estimera LT2 utan att göra specifika tröskeltester eller använda andra datatyper (t.ex. MLSS-test, kritisk hastighet från BP-analys).
+## LT2 via befintliga estimat
 
-**Möjlig utbyggnad:** Kritisk hastighet (Critical Speed) från best efforts — tangentpunkten i speed-duration-kurvan — ger en bra proxy för LT2/FTP. Det finns delvis data för detta redan via `bestEfforts`. Detta kan implementeras som ett tredje parallellt estimat.
+**HR-pace regression** estimerar LT2 redan — `estimateZonesFromStatisticalAnalysis` i `lib/fitness/zones.ts` returnerar `lt2HR` som används för z4-gränsen. Inget behöver byggas.
+
+**Aerob decoupling** kan inte estimera LT2 — det är ett LT1-fenomen per definition.
+
+**Framtida möjlighet:** Critical Speed (CS) från best efforts = tangentpunkten i speed-duration-kurvan, bra proxy för LT2/FTP. Planerat under P8 nedan.
 
 ---
 
 ## Prioriterad backlog
 
-### P1 — Säkerhetsåtgärder (se security audit)
+---
 
-Se [docs/security/SECURITY_AUDIT_2026_05_26.md](../security/SECURITY_AUDIT_2026_05_26.md).
+### P1 — Säkerhet (deploy-kritisk)
 
-**Prioriterat att fixa:**
-- [ ] **H1** Login brute-force rate limiting — IP-räknare i `authorize()` i `auth.ts`
-- [ ] **H4** Security headers — lägg till `headers()` + `poweredByHeader: false` i `next.config.ts`
-- [ ] **H5+H6** OAuth redirect_uri + state-parameter — hardkoda från `NEXTAUTH_URL`, lägg till CSRF-cookie
+Se [docs/security/SECURITY_AUDIT_2026_05_26.md](../security/SECURITY_AUDIT_2026_05_26.md) för fullständig lista.
+
+**Att fixa innan produktionsdeploy:**
+
+- [ ] **H1** Login brute-force — IP-räknare i `auth.ts` `authorize()`, PostgreSQL-backed (5 försök / 15 min)
+- [ ] **H4** Security headers — `headers()` + `poweredByHeader: false` i `next.config.ts`
+  ```ts
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/(.*)", headers: [
+      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+      { key: "X-Content-Type-Options",    value: "nosniff" },
+      { key: "X-Frame-Options",           value: "SAMEORIGIN" },
+      { key: "Referrer-Policy",           value: "strict-origin-when-cross-origin" },
+      { key: "Permissions-Policy",        value: "camera=(), microphone=(), geolocation=()" },
+    ]}];
+  }
+  ```
+- [ ] **H5+H6** OAuth redirect_uri hardkodas från `NEXTAUTH_URL`; state-cookie för CSRF
 - [ ] **M7** `Cache-Control: public` → `private` på `/api/activities/[id]/streams`
-- [ ] **H2** OAuth tokens (Strava/Garmin) krypteras i DB — wrap med `encryptIfNeeded/safeDecrypt`
+- [ ] **H2** Strava/Garmin OAuth-tokens krypteras i DB — wrap med `encryptIfNeeded/safeDecrypt`
 - [ ] **M2+M3** FK ownership-check för WorkoutType och WorkoutTemplate
-- [ ] **L2** Deployment hardening (ufw, fail2ban, chmod 600 på .env.local)
+- [ ] **L2** Deployment hardening: `ufw`, `fail2ban`, `chmod 600 .env.local`, dedikerat service-konto
 
 ---
 
-### P2 — Edit aktivitet = samma formulär som add template
+### P2 — Färgsystem: central config & unikhet
 
-**Nuläge:** `WorkoutEditModal` används för att redigera framtida planerade workouts. `WorkoutBuilder` används för att skapa nya (inkl. templates). De är helt separata komponenter.
+**Nuläge:** `lib/planner/colors.ts` är single source of truth. Competition-check lagd globalt. Strength-färg fixad.
 
-**Mål:** Klick på en framtida workout öppnar `WorkoutBuilder` i edit-läge (pre-populerat med befintlig data), inte `WorkoutEditModal`.
+**Kvarstående:**
+- [ ] Verifiera att `TemplateCard` och templates-vyn importerar `workoutColor` (inte lokala definitioner)
+- [ ] History: `workoutColor(sportType, null)` ger alltid default-blå för löpning (ingen typinfo från Strava). Acceptabelt — `isRace`-flaggan hanterar tävlingar. Dokumentera som "by design".
+- [ ] Planner och history ska visa `workoutColor(sportType, typeName)` konsekvent — inga lokala overrides
 
-**Plan:**
-1. Utöka `WorkoutBuilder` props med `editWorkout?: PlannedWorkout` (parallellt med befintlig `editTemplate`)
-2. Vid edit-mode: pre-populera builder med workoutens data (sport, typ, distans, tid, sektioner)
-3. Save → `PUT /api/planner/workouts/:id` med ny data
-4. Ta bort `WorkoutEditModal` eller bevara som fallback för enkla uppdateringar (status, datum)
-5. I `planner-client.tsx`: byt `setEditWorkout` → öppna builder med `editWorkout` prop
+**Färgschema (komplett referens):**
 
-**Formulärskillnad:** `WorkoutBuilder` har en "Spara som template"-checkbox. För redigering av befintlig workout: checkbox default unchecked, visa som "Uppdatera även template" om workout är länkad till en template.
+| Sport / typ | Hex | Tailwind |
+|---|---|---|
+| Competition / Tävling (ALLA sporter) | `#FBBF24` | yellow-400 |
+| Running — Easy / Distans (default) | `#7DD3FC` | sky-300 |
+| Running — Tempo | `#2DD4BF` | teal-400 |
+| Running — LT / Tröskel | `#F472B6` | pink-400 |
+| Running — AT / Aerob tröskel | `#818CF8` | indigo-400 |
+| Running — Speedwork / Intervall | `#3B82F6` | blue-500 |
+| Cycling | `#FB923C` | orange-400 |
+| Orienteering / OL | `#14B8A6` | teal-500 |
+| Strength / Gym | `#D97706` | amber-600 |
+| Nordic Skiing | `#BAE6FD` | sky-200 |
+| Roller Skiing | `#38BDF8` | sky-400 |
+| Swimming | `#60A5FA` | blue-400 |
+| Completed (status, overlay) | `#22C55E` | green-500 |
+| Missed (status, overlay) | `#EF4444` | red-500 |
+| Unlogged past (status) | `#FBBF24` | yellow-400 |
 
----
-
-### P3 — Templates — "Spara som template" alltid checked
-
-**Nuläge:** WorkoutBuilder har en checkbox "Spara som template" som kan vara unchecked.
-
-**Plan:**
-- När `WorkoutBuilder` öppnas via "New template" (från TemplateLibrary): dölj checkboxen, spara alltid som template
-- Lägg till `mode: "template" | "workout" | "edit"` prop till WorkoutBuilder
-- I "template" mode: ingen checkbox, alltid sparas till `workoutTemplates`
-- I "workout" mode (dag-klick): checkbox visas, optional
-- I "edit" mode: checkbox visas som "Uppdatera template" om workout har templateId
-
----
-
-### P4 — Lägga till types manuellt för alla sporter
-
-**Nuläge:** I settings (sports), kan typer läggas till för sporter. Kontrollera om UI begränsar till bara Running-sporter — bug om så.
-
-**Plan:**
-- Läs `app/(dashboard)/settings/sports-client.tsx` och verifiera att alla sporter kan ha typer tillagda
-- Om buggy: se till att "Add type"-knappen visas för alla SportCategory-poster, inte bara Running
-- Competition-typ: ge tydlig hint i UI: "Tip: lägg till en 'Competition'-typ för alla idrotter för att få gul färg automatiskt"
+Alla 12 sport/typ-färger är unika. Competition delar gul med "unlogged" men visas i olika kontext.
 
 ---
 
-### P5 — PB-tracker: anpassade distanser och multi-activity linking
+### P3 — Typ-system: Competition för alla sporter + manuell typ-skapelse
 
-**Nuläge:** PB-tracker visar standard tävlingsdistanser från `raceRecord`-tabellen. En aktivitet kan vara länkad till ett lopp via `RaceActivity`-tabellen.
+**Regler:**
+- Workout types är användardefinierade (CLAUDE.md-regel — hardkoda aldrig i logik/UI)
+- `workoutColor()` matchar "competition|comp|tävl|race|..." → gul, oavsett sport
+- Användaren skapar Competition-typen manuellt i Settings → Sports
+
+**Kvarstående:**
+- [ ] Verifiera att Settings → Sports UI visar "Add type"-knappen för ALLA sporter, inte bara Running
+  - Fil att kontrollera: `app/(dashboard)/settings/sports-client.tsx`
+  - Om det är buggat: knappen ska visas per `SportCategory` oavsett sport
+- [ ] Hint-text i UI: "Lägg till 'Competition' för gul färg i planner och history"
+- [ ] Types ska vara sökbara/filterbara i WorkoutBuilder-dropdown när sporter är valda
+
+---
+
+### P4 — HR-logik: manuell override (delvis klar)
+
+**Nuläge:** Manuellt satta `maxHeartRate`/`restingHeartRate` i AthleteProfile:
+- ✅ Sparas persistent i DB
+- ✅ Prioriteras alltid i `updateHRZones()` (manual path) och `updateVO2maxAndPaces()` (auto path)
+- ✅ Triggar `updateHRZones()` vid profilspar
+
+**Regler som redan gäller:**
+- `updateHRZones()` skriver ALDRIG till `AthleteProfile` — enbart kalibrerade värden till `FitnessCache`
+- Manuella override-värden skrivs ENBART via `/api/settings/profile`
+- `FitnessCache.maxHR` = kalibrerat estimat; `AthleteProfile.maxHeartRate` = manuellt satt
+
+**Kvarstående:**
+- [ ] Stats-sidan ska tydligt visa om maxHR är manuellt satt eller estimerat
+  - `AthleteProfile.maxHeartRate !== null` → visa "Manuellt: X bpm (trumfar estimat)"
+  - `AthleteProfile.maxHeartRate === null` → visa "Estimerat: X bpm"
+- [ ] Om användaren rensar maxHR-fältet (sätter till null) → ta bort profilvärdet, låt estimat ta över igen
+
+---
+
+### P5 — Edit aktivitet = WorkoutBuilder-formulär
+
+**Nuläge:** Framtida workout-klick öppnar `WorkoutEditModal` (enkel form). Templates öppnar `WorkoutBuilder` (full form). De är separata.
+
+**Mål:** Framtida workout-klick öppnar `WorkoutBuilder` i edit-läge, pre-populerat.
+
+**Teknisk plan:**
+
+1. **`WorkoutBuilder` prop-utökning:**
+   ```ts
+   interface WorkoutBuilderProps {
+     mode?: "workout" | "template" | "edit-workout" | "edit-template";
+     editWorkout?: PlannedWorkout;  // ny prop
+     editTemplate?: WorkoutTemplate; // befintlig
+     // ...
+   }
+   ```
+
+2. **Pre-populering:** vid `editWorkout` → sätt initialt state: sport, type, namn, distans, tid, sektioner
+
+3. **Save-path vid `edit-workout`:**
+   - `PUT /api/planner/workouts/:id` med uppdaterad data
+   - Om `saveAsTemplate` är checked → även `POST /api/planner/templates`
+
+4. **"Spara som template"-checkboxens beteende per mode:**
+   - `"workout"` (ny från dag-klick): checkbox visas, optional
+   - `"template"` (ny från template-bibliotek): checkbox dold, alltid sparat som template
+   - `"edit-workout"`: checkbox som "Uppdatera även template" (checked om workout har templateId)
+   - `"edit-template"`: checkbox dold, alltid uppdaterar template
+
+5. **`planner-client.tsx`:** byt `setEditWorkout(w)` → `openBuilder(w.date, { editWorkout: w })`
+
+6. **`WorkoutEditModal`** kan tas bort när detta är implementerat
+
+**Filer:**
+- `components/planner/WorkoutBuilder.tsx`
+- `app/(dashboard)/planner/planner-client.tsx`
+- `app/api/planner/workouts/[id]/route.ts` (verifiera PUT-stöd)
+
+---
+
+### P6 — PB-tracker: anpassade distanser & multi-activity linking
+
+**Nuläge:** `raceRecord`-tabellen håller PB-data. En aktivitet kan vara länkad via `activityId String?` (1-till-1).
 
 **Mål:**
-1. Användaren kan lägga till egna distanser (t.ex. "17km Stafett", "42.5km Ultra") i PB-trackern
-2. En enskild Strava-aktivitet kan vara kopplad till FLERA PB-poster (t.ex. samma lopp räknas som 10km-PB och halvmarathon-PB om det var en dubbelstafett)
+1. Användaren skapar egna trackade distanser/tävlingar ("17km Stafett", "42.5km Ultra")
+2. En Strava-aktivitet kan kopplas till FLERA PB-poster (many-to-many)
 3. Anpassade distanser visas i prediktionstabellen på stats-sidan
 
-**Plan:**
-
-**Schema:**
+**Schema-ändringar:**
 ```prisma
 model CustomPBDistance {
   id        String   @id @default(cuid())
   userId    String
-  label     String   // "Stafett 4x2km"
-  distanceM Float    // 8000
+  label     String        // "Stafett 17km"
+  distanceM Float         // 17000
+  notes     String?
   user      User     @relation(fields: [userId], references: [id])
   @@unique([userId, label])
 }
+
+// Ersätter raceRecord.activityId (ta bort den kolumnen)
+model RaceRecordActivity {
+  raceRecordId String
+  activityId   String
+  raceRecord   RaceRecord @relation(fields: [raceRecordId], references: [id], onDelete: Cascade)
+  activity     Activity   @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  @@id([raceRecordId, activityId])
+}
 ```
 
-**PB linking:**
-- `raceRecord` har `activityId String?` — gör om till many-to-many
-- Ny junction-tabell `RaceRecordActivity { raceRecordId, activityId }`
-- Uppdatera PB-tracker UI för multi-select av kopplade aktiviteter
-
 **API:**
-- `POST /api/pb-distances` — skapa/ta bort anpassad distans
-- `GET /api/pb-distances` — lista
-- Uppdatera `GET /api/stats` — inkludera anpassade distanser i prediktioner
+- `GET/POST/DELETE /api/pb-distances` — hantera CustomPBDistance
+- Uppdatera `/api/races` och `/api/stats` för multi-activity linking
+- Migration: flytta befintlig `raceRecord.activityId` → `RaceRecordActivity`-tabell
+
+**UI (races-sidan):**
+- Knapp "Add custom distance" → dialog med label + distans
+- Activity-multi-select vid PB-skapande
+- Stats-sidan: anpassade distanser i prediktionstabellen
 
 ---
 
-### P6 — Drag and drop mellan dagar (förbättringar)
+### P7 — Drag and drop: visuell feedback & undo
 
-**Nuläge (efter fix):** Drag från WorkoutPill fungerar för idag + framtid. Drop på idag + framtid fungerar.
+**Nuläge (efter fix):** Drag-and-drop fungerar för idag + framtid.
 
 **Kvarstående:**
-- [ ] Visuell feedback vid drag (opacity på WorkoutPill under drag)
-- [ ] `handleMoveWorkout` i `planner-client.tsx` — verifiera att API-anropet är `PUT /api/planner/workouts/:id` med `{ date: newDate }`
-- [ ] Toast/konfirmation efter flytt
-- [ ] Undo-möjlighet (snooze 5 sek med undo-knapp)
+- [ ] Visuell feedback: `opacity-50` på WorkoutPill medan den dras (`onDragStart` → tillstånd, `onDragEnd` → återställ)
+- [ ] Verifiera `handleMoveWorkout` i `planner-client.tsx` gör `PUT /api/planner/workouts/:id { date: newDate }`
+- [ ] Toast-konfirmation med 5 sek undo: `"Flytt: 'Easy run' → 27 maj [Ångra]"`
+- [ ] Undo-state: spara `{ workoutId, oldDate }` i React-state, rensa efter 5 sek
 
 ---
 
-### P7 — Block-hue synligare i kalenderrader
+### P8 — Block-hue: tydligare visuell separation
 
-**Nuläge (efter fix):** Opacity ökad till `22` hex (~13%). Fortfarande subtil.
+**Nuläge (efter fix):** Dagcells bakgrundsfärg med opacity 13%. Fortfarande subtilt.
 
-**Förbättringar:**
-- [ ] Visa blockfärg som en tunn stripe i vänsterkanten av varje dagcell (3px vänsterborder i blockfärg) — tydligare utan att förstöra läsbarheten
-- [ ] I PlannerCalendar: om `blockHere`, lägg till en `borderLeftColor: blockHere.color` + `borderLeftWidth: 3`
-- [ ] BlockBanner "hue" ska matcha — bakgrundsfärg i veckoraden för block-veckor
+**Kvarstående:**
+- [ ] Lägg till 3px vänsterborder i blockfärg på varje dagcell i blockperioden:
+  ```tsx
+  style={blockHere ? {
+    backgroundColor: `${blockHere.color}22`,
+    borderLeftColor: blockHere.color,
+    borderLeftWidth: "3px",
+    borderLeftStyle: "solid",
+  } : undefined}
+  ```
+- [ ] Veckosammanfattnings-strip (`WeekSummaryStrip`) ska visa blockfärg i header om veckan är i ett block
+- [ ] BlockBanner-raden ska ha en tunn färgad under-border i blockfärg
 
 ---
 
-### P8 — Critical Speed som tredje LT2-estimat
-
-**Nuläge:** LT1 estimeras via HR-pace regression och aerob decoupling. LT2 via statistisk zonsanalys.
+### P9 — Critical Speed som tredje LT2-estimat
 
 **Plan:**
 ```typescript
 // lib/fitness/critical-speed.ts
+export interface CriticalSpeedResult {
+  csMetersPerSec: number;   // ≈ LT2 pace
+  wPrimeMeters: number;     // anaerob kapacitet
+  rSquared: number;
+  effortsUsed: number;
+}
+
 export function estimateCriticalSpeed(
   bestEfforts: Array<{ distance: number; elapsed_time: number }>
-): { cs: number; anaerobi: number } | null
-// Critical Speed (CS) = intercept of 1/distance vs time regression
-// W' (anaerobic capacity) = slope
-// Returns CS in m/s (= LT2-proxy)
+): CriticalSpeedResult | null
+// Metod: linjär regression på (1/distance) vs (time/distance)
+// CS = 1/slope, W' = intercept * CS
+// Kräver minst 3 best efforts, 200m–10km
 ```
-- CS visas som parallellt LT2-estimat i HRZoneTable på stats-sidan
-- Kräver minst 3 best efforts på olika distanser (200m–10km)
+- Integreras i `cache.ts` → spara `criticalSpeedMs` i `FitnessCache`
+- Visas i `HRZoneTable` på stats-sidan som "Critical Speed (LT2-proxy)"
 
 ---
 
-### P9 — Security: HTTP headers i next.config.ts
+## Tekniska beroenden
 
-```typescript
-// next.config.ts
-poweredByHeader: false,
-async headers() {
-  return [{
-    source: "/(.*)",
-    headers: [
-      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
-      { key: "X-Content-Type-Options", value: "nosniff" },
-      { key: "X-Frame-Options", value: "SAMEORIGIN" },
-      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-    ],
-  }];
-},
 ```
-**Notera:** CSP kräver whitelist för CartoDB tiles och eventuell Leaflet CDN (om ej self-hosted). Implementera CSP i separat steg.
+Central config:
+  lib/planner/colors.ts          ← färger (DONE)
+  lib/fitness/zones.ts           ← HR-zoner, LT1/LT2
+  lib/fitness/cache.ts           ← caching, HR-override (DONE)
+  prisma/schema.prisma           ← PB many-to-many (P6)
 
----
+Refaktoreringar:
+  components/planner/WorkoutBuilder.tsx   ← mode-prop (P5)
+  app/(dashboard)/planner/planner-client.tsx ← edit-flow (P5)
+  app/(dashboard)/settings/sports-client.tsx ← type-skapelse alla sporter (P3)
+  app/api/races/route.ts                  ← multi-activity linking (P6)
+  app/api/settings/profile/route.ts      ← HR-override (DONE)
 
-### P10 — Security: login rate limiting
-
-```typescript
-// auth.ts — i authorize() callback
-const ip = "server"; // NextAuth v5 ger inte req direkt i authorize(), använd server-state
-// Alternativ: custom route handler för credentials POST
+Nya filer:
+  lib/fitness/critical-speed.ts          ← CS estimat (P9)
+  app/api/pb-distances/route.ts          ← custom PB distanser (P6)
 ```
-Primär approach: Intercept `/api/auth/callback/credentials` POST i en custom route och applicera DB-backed räknare (5 försök / 15 min per IP) innan delegering till NextAuth handlers.
 
 ---
 
-## Färgschema — referens
-
-| Sport/typ | Hex | Tailwind |
-|---|---|---|
-| Competition / Tävling (ALLA sporter) | `#FBBF24` | yellow-400 |
-| Running — Easy / Distans | `#7DD3FC` | sky-300 |
-| Running — Tempo | `#2DD4BF` | teal-400 |
-| Running — LT/Tröskel | `#F472B6` | pink-400 |
-| Running — AT/Aerob tröskel | `#818CF8` | indigo-400 |
-| Running — Speedwork/Intervall | `#3B82F6` | blue-500 |
-| Cycling | `#FB923C` | orange-400 |
-| Orienteering | `#14B8A6` | teal-500 |
-| Strength/Gym | `#D97706` | amber-600 |
-| Nordic Skiing | `#BAE6FD` | sky-200 |
-| Roller Skiing | `#38BDF8` | sky-400 |
-| Swimming | `#60A5FA` | blue-400 |
-| Completed (status) | `#22C55E` | green-500 |
-| Missed (status) | `#EF4444` | red-500 |
-| Unlogged past (status) | `#FBBF24` | yellow-400 |
-
-**Alla färger är unika** (Strength ändrades från `#F97316` → `#D97706` för att särskilja från Cycling orange `#FB923C`). Competition delar gul med "unlogged past" — detta är medvetet (tävling = gult är prioriterat och visas annorlunda).
-
----
-
-_Uppdaterat: 2026-05-26_
+_Senast uppdaterad: 2026-05-26_
