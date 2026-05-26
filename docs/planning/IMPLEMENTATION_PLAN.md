@@ -1612,8 +1612,24 @@ GOOGLE_AI_API_KEY=""
 - `stats/page.tsx`: both fast and slow paths extended to query 730 days of load curve
 - `planner-client.tsx`: `WorkoutBuilder` now used for editing future planned workouts (not just templates); IIFE pattern replaced with `useMemo`
 - `WorkoutBuilder.tsx`: added `plannedWorkoutMode` prop + `onDelete` prop; delete with inline confirm shown in footer
-- `athlete-profile.tsx`: `handleSave` now checks `res.ok` and surfaces error to user instead of always showing "Saved ✓"
+- `athlete-profile.tsx`: `handleSave` now checks `res.ok` and surfaces error to user instead of always showing "Saved ✓"; dateOfBirth normalized to YYYY-MM-DD in form init to fix Zod `invalid_input`
 - Logo: T-icon pull-in set to `-(size * 0.20)` for correct letter-gap spacing
+- `zones.ts` `buildPaceZonesFromLT`: rewritten with velocity arithmetic — derives vVO2max from LT2 (LT2 ≈ 88% vVO2max, Seiler 2010), computes all Daniels zones as % of vVO2max in m/s before converting back to sec/km; old sec/km multiplication produced wrong interval zones
+- `vo2max.ts`: removed Cooper model (duplicate of Uth-Sørensen); removed HR-pace regression from weighted estimate (unreliable due to warm-up/cool-down noise); added Volume-adjusted Riegel as Model 4 — exponent d = clamp(1.18 − 0.0015 × avgWeeklyKm, 1.05, 1.18), projects best PB to predicted 10K then computes VDOT; fixed "Decay bridge" capitalisation
+- `vo2max.ts`: VDOT base weight reduced (0.35→0.28 with current signals, 0.55→0.45 without); PB age-decay added — factor 1.0 at ≤90 days, linear decay to 0.35 at 540+ days, so stale PBs cannot dominate over TSB/HR/Riegel signals
+- `stats/page.tsx` + `cache.ts`: compute `avgWeeklyRunKm` (8-week rolling window, run/trail only) and pass as 6th arg to `estimateVO2max`
+
+**VO2max weighted model configuration (as of 2026-05-26):**
+| Model | With TSB+HR signals | No current signals |
+|---|---|---|
+| VDOT race PBs | 0.28 × age-decay (floor ~0.10) | 0.45 × age-decay (floor ~0.16) |
+| TSB-adjusted VDOT | 0.25 | — |
+| HR-form signal | 0.20 | — |
+| Volume-adj. Riegel | 0.12 | 0.18 |
+| Critical Speed | 0.05 | 0.08 |
+| Uth-Sørensen | 0.05 | 0.12 |
+| Decay bridge | 0.01 | 0.05 |
+Age-decay: ≤90d → factor 1.0, 540+d → factor 0.35, linear between. All weights renormalized over available models.
 
 ### Documentation Written
 - `docs/api/auth.md` — auth + settings endpoints
@@ -1715,4 +1731,4 @@ Every internal API endpoint and cross-module function that crosses a boundary (H
 
 ---
 
-*Last updated: 2026-05-26*
+*Last updated: 2026-05-26 (vo2max model reweight + PB age-decay)*
