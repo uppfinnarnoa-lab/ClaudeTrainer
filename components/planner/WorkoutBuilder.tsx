@@ -22,8 +22,10 @@ interface Props {
   hrZones?: number[][];
   onSave: (data: BuilderData) => void;
   onCancel: () => void;
+  onDelete?: () => void;         // shown when plannedWorkoutMode is true
   initialDate?: string;
   editTemplate?: WorkoutTemplate; // pre-fills form for editing
+  plannedWorkoutMode?: boolean;   // changes title to "Edit workout" (not "Edit template")
 }
 
 export interface BuilderData {
@@ -52,7 +54,7 @@ function emptySection(): NewSection {
 
 const ZONE_NAMES = ["", "Z1 Recovery", "Z2 Aerobic", "Z3 Tempo", "Z4 Threshold", "Z5 VO2max"];
 
-export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, initialDate, editTemplate }: Props) {
+export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, onDelete, initialDate, editTemplate, plannedWorkoutMode }: Props) {
   const isEditing = !!editTemplate;
 
   const [name, setName]           = useState(editTemplate?.name ?? "");
@@ -69,6 +71,7 @@ export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, i
   // Default: unchecked when adding from calendar (one-off), checked when opening from library.
   const [saveAsTemplate, setSaveAsTemplate] = useState(!isEditing && !initialDate);
   const [date, setDate]               = useState(initialDate ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const selectedSport = sports.find(s => s.id === sportId);
   const selectedType  = selectedSport?.workoutTypes.find(t => t.id === typeId);
@@ -132,7 +135,7 @@ export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, i
       <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="font-semibold text-primary">{isEditing ? "Edit template" : "Build workout"}</h2>
+          <h2 className="font-semibold text-primary">{isEditing ? (plannedWorkoutMode ? "Edit workout" : "Edit template") : "Build workout"}</h2>
           <button onClick={onCancel} className="p-1.5 rounded-lg text-muted hover:text-primary hover:bg-surface-2 transition">
             <X size={16} />
           </button>
@@ -230,6 +233,19 @@ export function WorkoutBuilder({ sports, paceZones, hrZones, onSave, onCancel, i
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-border flex items-center gap-3">
+          {onDelete && !confirmDelete && (
+            <button onClick={() => setConfirmDelete(true)}
+              className="px-3 py-2 text-sm text-red-500 hover:text-red-400 transition">
+              Delete
+            </button>
+          )}
+          {onDelete && confirmDelete && (
+            <>
+              <span className="text-xs text-muted">Delete this workout?</span>
+              <button onClick={onDelete} className="px-3 py-1.5 rounded-lg bg-red-500 text-xs font-medium text-white hover:bg-red-400 transition">Confirm</button>
+              <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 text-xs text-muted hover:text-primary transition">No</button>
+            </>
+          )}
           {showTemplateOption && (
             <label className="flex items-center gap-2 text-xs text-muted cursor-pointer">
               <input type="checkbox" checked={saveAsTemplate} onChange={e => setSaveAsTemplate(e.target.checked)}

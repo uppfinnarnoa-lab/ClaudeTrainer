@@ -19,6 +19,7 @@ export function AthleteProfileForm({ initial }: { initial: Profile }) {
   const [form, setForm] = useState<Profile>(initial);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function set(k: keyof Profile, v: string) {
     setForm(f => ({ ...f, [k]: v === "" ? null : v }));
@@ -26,14 +27,22 @@ export function AthleteProfileForm({ initial }: { initial: Profile }) {
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
-      await fetch("/api/settings/profile", {
+      const res = await fetch("/api/settings/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setSaveError(body.error ?? "Kunde inte spara — kontrollera värdena.");
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch {
+      setSaveError("Nätverksfel — försök igen.");
     } finally {
       setSaving(false);
     }
@@ -97,13 +106,14 @@ export function AthleteProfileForm({ initial }: { initial: Profile }) {
           className={inputCls} />
       </Field>
 
-      <div className="sm:col-span-2 flex items-center gap-3">
+      <div className="sm:col-span-2 flex items-center gap-3 flex-wrap">
         <button onClick={handleSave} disabled={saving}
           className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white dark:text-background hover:opacity-90 disabled:opacity-50 transition">
           {saving && <Loader2 size={15} className="animate-spin" />}
           {saved ? "Saved ✓" : "Save profile"}
         </button>
-        <p className="text-xs text-muted">Used by your AI coach in every conversation.</p>
+        {saveError && <p className="text-xs text-red-500">{saveError}</p>}
+        {!saveError && <p className="text-xs text-muted">Used by your AI coach in every conversation.</p>}
       </div>
     </div>
   );

@@ -135,9 +135,9 @@ export default async function StatsPage() {
       return Object.values(weeklyVolumes[key] ?? {}).reduce((s, v) => s + v.km, 0);
     });
 
-    // Fetch last 24 weeks with HR + speed for load curve, zone seconds and pace zones
+    // Fetch last 2 years for load curve; zone/pace/analytics calculations filter internally to 12 weeks
     const recentForCurve = await prisma.activity.findMany({
-      where: { userId, startDate: { gte: subDays(now, 168) } },
+      where: { userId, startDate: { gte: subDays(now, 730) } },
       select: { movingTime: true, averageHeartrate: true, startDate: true, sportType: true, averageSpeed: true },
       orderBy: { startDate: "asc" },
     });
@@ -147,8 +147,8 @@ export default async function StatsPage() {
       const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR, restHR });
       curveTSSMap.set(key, (curveTSSMap.get(key) ?? 0) + tss);
     }
-    const fullCurve = buildLoadCurve(curveTSSMap, subDays(now, 168), now);
-    const loadCurve = fullCurve.slice(-112);
+    const fullCurve = buildLoadCurve(curveTSSMap, subDays(now, 730), now);
+    const loadCurve = fullCurve;
 
     // Recompute zone seconds from calibrated zones (don't trust cached value — may use old zones)
     const fastZoneSeconds: Record<string, number> = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
@@ -322,8 +322,8 @@ export default async function StatsPage() {
     const tss = computeTSS({ movingTimeSec: a.movingTime, avgHR: a.averageHeartrate, maxHR: computedMaxHR, restHR });
     dailyTSSMap.set(key, (dailyTSSMap.get(key) ?? 0) + tss);
   }
-  const fullCurve = buildLoadCurve(dailyTSSMap, subDays(now, 365), now);
-  const loadCurve = fullCurve.slice(-112);
+  const fullCurve = buildLoadCurve(dailyTSSMap, subDays(now, 730), now);
+  const loadCurve = fullCurve;
   const todayLoad = fullCurve.at(-1) ?? { atl: 0, ctl: 0, tsb: 0, tss: 0, date: "" };
 
   const weeklyVolumes: Record<string, Record<string, { km: number; timeSec: number }>> = {};

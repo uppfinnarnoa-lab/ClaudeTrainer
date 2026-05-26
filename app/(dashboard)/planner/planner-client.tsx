@@ -6,7 +6,6 @@ import { TemplateLibrary } from "@/components/planner/TemplateLibrary";
 import { PlannerCalendar } from "@/components/planner/PlannerCalendar";
 import { WorkoutBuilder, type BuilderData } from "@/components/planner/WorkoutBuilder";
 import { OutcomeModal } from "@/components/planner/OutcomeModal";
-import { WorkoutEditModal } from "@/components/planner/WorkoutEditModal";
 import { BlockBanner } from "@/components/planner/BlockBanner";
 import { BlockEditorModal } from "@/components/planner/BlockEditorModal";
 import type {
@@ -183,18 +182,47 @@ export function PlannerClient(props: Props) {
     setStatusWorkout(null);
   }
 
-  // ── Edit save (future workouts) ────────────────────────────────────
-  async function handleEditSave(id: string, patch: Partial<PlannedWorkout>) {
+  // ── Edit save (future workouts via WorkoutBuilder) ──────────────────
+  async function handleEditBuilderSave(data: BuilderData) {
+    if (!editWorkout) return;
+    const id = editWorkout.id;
+    setEditWorkout(null);
+
+    const sport = props.sports.find(s => s.id === data.sportId);
+
     const res = await fetch(`/api/planner/workouts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
+      body: JSON.stringify({
+        name: data.name,
+        sportType: sport?.name ?? editWorkout.sportType,
+        date: data.date ?? editWorkout.date,
+        notes: data.description || null,
+        color: data.color,
+      }),
     });
     if (res.ok) {
       const updated: PlannedWorkout = await res.json();
       setWorkouts(prev => prev.map(w => w.id === id ? { ...w, ...updated } : w));
     }
-    setEditWorkout(null);
+
+    // If the workout has a linked template, update its sections and metadata too
+    if (editWorkout.templateId) {
+      await fetch(`/api/planner/templates/${editWorkout.templateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name,
+          sportId: data.sportId,
+          typeId: data.typeId,
+          description: data.description,
+          color: data.color,
+          sections: data.sections,
+        }),
+      });
+    }
+
+    startTransition(() => router.refresh());
   }
 
   // ── Delete workout ─────────────────────────────────────────────────
@@ -307,15 +335,39 @@ export function PlannerClient(props: Props) {
         />
       )}
 
-      {/* Edit modal — future workouts only */}
-      {editWorkout && (
-        <WorkoutEditModal
-          workout={editWorkout}
-          onClose={() => setEditWorkout(null)}
-          onSave={handleEditSave}
-          onDelete={handleDeleteWorkout}
-        />
-      )}
+      {/* Workout builder — edit future workout */}
+      {editWorkout && (() => {
+        const sport = props.sports.find(s =>
+          s.name.toLowerCase() === editWorkout.sportType.toLowerCase()
+        ) ?? props.sports[0];
+        const editTemplate: WorkoutTemplate = editWorkout.template ?? {
+          id: editWorkout.id,
+          name: editWorkout.name,
+          description: editWorkout.notes,
+          sportId: sport?.id ?? "",
+          typeId: null,
+          color: editWorkout.color,
+          estimatedDuration: editWorkout.targetDuration,
+          estimatedDistance: editWorkout.targetDistance,
+          estimatedZoneDistribution: null,
+          sections: [],
+          sport: sport ?? { id: "", name: editWorkout.sportType, color: null, workoutTypes: [] },
+          type: null,
+        };
+        return (
+          <WorkoutBuilder
+            sports={props.sports}
+            paceZones={props.paceZoneRanges}
+            hrZones={props.hrZoneRanges}
+            editTemplate={editTemplate}
+            initialDate={editWorkout.date}
+            plannedWorkoutMode
+            onSave={handleEditBuilderSave}
+            onDelete={() => { handleDeleteWorkout(editWorkout.id); setEditWorkout(null); }}
+            onCancel={() => setEditWorkout(null)}
+          />
+        );
+      })()}
 
       {/* Block editor — new or edit */}
       {(showNewBlock || editingBlock) && (
