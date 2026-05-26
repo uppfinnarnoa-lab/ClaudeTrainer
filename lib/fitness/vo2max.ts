@@ -446,6 +446,7 @@ export function estimateVO2max(
   restHR: number,
   racePBs?: RacePB[],
   tsb?: number,
+  avgWeeklyRunKm?: number,
 ): VO2maxEstimate {
   const isRunning = (a: ActivitySample) => /run|trail/i.test(a.sportType);
   const runs = activities.filter(isRunning);
@@ -566,23 +567,20 @@ export function estimateVO2max(
     }
   }
 
-  // ── MODEL 4: HR-pace regression (Firstbeat-style, GAP-corrected, recency-weighted) ──
-  // Use grade-adjusted pace (GAP) to eliminate elevation noise from hilly runs.
-  // Exclude interval sessions — their avg pace is diluted by warm-up/recovery.
-  const regressionRuns = runs
-    .filter(a => a.avgHR && a.distanceM >= 3000 && a.timeSec > 0
-      && !looksLikeIntervals(a.name ?? ""))
-    .map(a => {
-      const rawPace = a.timeSec / (a.distanceM / 1000);
-      const gap = gradeAdjustedPace(rawPace, a.totalElevationGain ?? 0, a.distanceM);
-      return { avgHR: a.avgHR!, avgPaceSecPerKm: gap, weight: recencyWeight(a.startDate) };
-    });
-  const nValidRegression = regressionRuns.filter(r =>
-    r.avgHR > maxHR * 0.60 && r.avgHR < maxHR * 0.92
-  ).length;
-  // Boost regression weight with larger datasets (more data = more reliable slope)
-  const model4Weight = nValidRegression >= 300 ? 0.28 : nValidRegression >= 100 ? 0.22 : nValidRegression >= 20 ? 0.16 : 0.10;
-  const model4 = maxHR > 0 ? vo2maxHRPaceRegression(regressionRuns, maxHR) : null;
+  // ── MODEL 4: Volume-adjusted Riegel (Alex Gascón model) ─────────────────
+  // Exponent d = clamp(1.18 − 0.0015 × avgWeeklyKm, 1.05, 1.18).
+  // Higher volume → smaller exponent → better endurance → more accurate marathon prediction.
+  let model4Vdot: number | null = null;
+  if (racePBs && racePBs.length > 0 && avgWeeklyRunKm && avgWeeklyRunKm > 0) {
+    const varExponent = Math.max(1.05, Math.min(1.18, 1.18 - 0.0015 * avgWeeklyRunKm));
+    // Best PB by VDOT value (same anchor the display column uses)
+    const anchor = racePBs.reduce((best, pb) =>
+      vdotFromRace(pb.distanceM, pb.timeSec) > vdotFromRace(best.distanceM, best.timeSec) ? pb : best
+    );
+    const pred10K = anchor.timeSec * Math.pow(10000 / anchor.distanceM, varExponent);
+    const v = vdotFromRace(10000, pred10K);
+    if (v > 35 && v < 90) model4Vdot = v;
+  }
 
   // ── MODEL 5: Fitness decay bridge ────────────────────────────────────────
   let model5Vdot: number | null = null;
@@ -636,25 +634,21 @@ export function estimateVO2max(
 
   // ── WEIGHTED MEAN — race PBs dominate when present ───────────────────────
   const hasRacePBs = racePBCandidates.length > 0 || model6Vdot !== null;
-  // TSB and HR-form signal reflect CURRENT fitness (not just historical PBs).
-  // They get higher weight so predictions adapt to training state, not just race history.
-  const tsbWeight    = model7Vdot !== null ? 0.25 : 0.00; // form matters a lot
-  const hrFormWeight = model8Vdot !== null ? 0.20 : 0.00; // training quality signal
-  // Reduce PB and regression weight when we have good current-fitness signals
+  const tsbWeight    = model7Vdot !== null ? 0.25 : 0.00;
+  const hrFormWeight = model8Vdot !== null ? 0.20 : 0.00;
   const hasCurrent   = tsbWeight + hrFormWeight > 0;
-  const vdotWeight   = hasRacePBs ? (hasCurrent ? 0.30 : 0.50) : 0.00;
-  const csWeight     = model6Vdot !== null ? (hasCurrent ? 0.06 : 0.08) : 0.00;
-  const regrWeight   = hasRacePBs ? Math.min(model4Weight, hasCurrent ? 0.08 : 0.10) : model4Weight;
+  const vdotWeight   = hasRacePBs ? (hasCurrent ? 0.35 : 0.55) : 0.00;
+  const csWeight     = model6Vdot !== null ? (hasCurrent ? 0.05 : 0.08) : 0.00;
+  const varWeight    = model4Vdot !== null ? (hasCurrent ? 0.12 : 0.18) : 0.00;
   type ModelEntry = [number | null, number, string];
   const models: ModelEntry[] = [
-    [model1Vdot,  vdotWeight,  "VDOT (race PBs)"],
-    [model7Vdot,  tsbWeight,   "TSB-adjusted (form)"],
-    [model8Vdot,  hrFormWeight,"HR-form signal"],
-    [model6Vdot,  csWeight,    "Critical Speed"],
-    [model4,      regrWeight,  "HR-pace regression"],
-    [model2,      hasRacePBs ? 0.04 : 0.10, "Uth-Sørensen"],
-    [model3,      hasRacePBs ? 0.02 : 0.07, "Cooper"],
-    [model5Vdot,  hasRacePBs ? 0.01 : 0.05, "decay bridge"],
+    [model1Vdot,  vdotWeight,               "VDOT (race PBs)"],
+    [model7Vdot,  tsbWeight,                "TSB-adjusted (form)"],
+    [model8Vdot,  hrFormWeight,             "HR-form signal"],
+    [model4Vdot,  varWeight,                "Volume-adj. Riegel"],
+    [model6Vdot,  csWeight,                 "Critical Speed"],
+    [model2,      hasRacePBs ? 0.05 : 0.12, "Uth-Sørensen"],
+    [model5Vdot,  hasRacePBs ? 0.01 : 0.05, "Decay bridge"],
   ];
 
   const available = models.filter(([v]) => v !== null && v > 35 && v < 90);

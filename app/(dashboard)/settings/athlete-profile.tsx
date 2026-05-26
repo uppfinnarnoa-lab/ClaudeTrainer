@@ -16,7 +16,10 @@ interface Profile {
 }
 
 export function AthleteProfileForm({ initial }: { initial: Profile }) {
-  const [form, setForm] = useState<Profile>(initial);
+  const [form, setForm] = useState<Profile>({
+    ...initial,
+    dateOfBirth: initial.dateOfBirth?.split("T")[0] ?? null,
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);

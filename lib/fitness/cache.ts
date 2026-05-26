@@ -111,7 +111,16 @@ export async function updateVO2maxAndPaces(userId: string) {
   const todayLoad = loadCurve.at(-1) ?? { atl: 0, ctl: 0, tsb: 0, tss: 0, date: "" };
   const acwr = computeACWR(dailyTSS, now);
 
-  // ── VO2max & paces — TSB passed so form-adjusted model runs ────────────
+  // ── VO2max & paces — TSB + weekly volume passed for full model set ───────
+  const cacheEightWeeksAgo = subDays(now, 56);
+  const cacheWkRunKm = new Map<string, number>();
+  for (const a of activities as Act[]) {
+    if (!/run|trail/i.test(a.sportType) || a.startDate < cacheEightWeeksAgo) continue;
+    const wk = format(startOfWeek(a.startDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    cacheWkRunKm.set(wk, (cacheWkRunKm.get(wk) ?? 0) + a.distance / 1000);
+  }
+  const cacheAvgWeeklyRunKm = [...cacheWkRunKm.values()].reduce((s, v) => s + v, 0) / 8;
+
   const vo2maxResult = estimateVO2max(
     (activities as Act[]).map(a => ({
       distanceM: a.distance, timeSec: a.movingTime,
@@ -119,7 +128,7 @@ export async function updateVO2maxAndPaces(userId: string) {
       sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
       startDate: a.startDate, totalElevationGain: a.totalElevationGain,
     })),
-    maxHR, restHR, racePBs, todayLoad.tsb,
+    maxHR, restHR, racePBs, todayLoad.tsb, cacheAvgWeeklyRunKm,
   );
   const paceZones = buildPaceZones(vo2maxResult.vdot);
   const existingZones = (existingCache?.zones as object | null) ?? buildHRZonesJson(maxHR, restHR);
@@ -354,6 +363,15 @@ export async function updateHRZones(userId: string) {
   const thresholdHR = Math.round((hrZones.z4[0] + hrZones.z4[1]) / 2);
   const zonesJson = { z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5 };
 
+  const zonesEightWeeksAgo = subDays(new Date(), 56);
+  const zonesWkRunKm = new Map<string, number>();
+  for (const a of acts) {
+    if (!/run|trail/i.test(a.sportType) || a.startDate < zonesEightWeeksAgo) continue;
+    const wk = format(startOfWeek(a.startDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    zonesWkRunKm.set(wk, (zonesWkRunKm.get(wk) ?? 0) + a.distance / 1000);
+  }
+  const zonesAvgWeeklyRunKm = [...zonesWkRunKm.values()].reduce((s, v) => s + v, 0) / 8;
+
   const vo2maxResult = estimateVO2max(
     acts.map(a => ({
       distanceM: a.distance, timeSec: a.movingTime,
@@ -361,7 +379,7 @@ export async function updateHRZones(userId: string) {
       sportType: a.sportType, name: a.name,
       startDate: a.startDate, totalElevationGain: a.totalElevationGain,
     })),
-    maxHR, restHR, racePBs, undefined,
+    maxHR, restHR, racePBs, undefined, zonesAvgWeeklyRunKm,
   );
   const paceZones = buildPaceZones(vo2maxResult.vdot);
 

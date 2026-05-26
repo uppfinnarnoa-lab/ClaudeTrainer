@@ -302,13 +302,22 @@ export default async function StatsPage() {
     ? { ...(fitnessCache.zones as HRZones), maxHR: computedMaxHR, restHR }
     : buildHRZones(computedMaxHR, restHR);
 
+  const slowEightWeeksAgo = subDays(now, 56);
+  const slowWkRunKm = new Map<string, number>();
+  for (const a of activities as A[]) {
+    if (!/run|trail/i.test(a.sportType) || a.startDate < slowEightWeeksAgo) continue;
+    const wk = format(startOfWeek(a.startDate, { weekStartsOn: 1 }), "yyyy-MM-dd");
+    slowWkRunKm.set(wk, (slowWkRunKm.get(wk) ?? 0) + a.distance / 1000);
+  }
+  const slowAvgWeeklyRunKm = [...slowWkRunKm.values()].reduce((s, v) => s + v, 0) / 8;
+
   const vo2max = estimateVO2max(
     activities.map((a: A) => ({
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, isRace: a.isRace,
       sportType: a.sportType, name: a.name, startDate: a.startDate,
     })),
-    computedMaxHR, restHR, racePBs,
+    computedMaxHR, restHR, racePBs, undefined, slowAvgWeeklyRunKm,
   );
   const paceZones = buildPaceZones(vo2max.vdot);
   const ltSlow = estimateLTFromRaces(racePBs, computedMaxHR, restHR);

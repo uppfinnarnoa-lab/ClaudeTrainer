@@ -505,12 +505,18 @@ export function buildPaceZones(vdot: number): PaceZones {
 }
 
 export function buildPaceZonesFromLT(lt1PaceSecPerKm: number, lt2PaceSecPerKm: number): PaceZones {
+  // All zone math in velocity space (m/s), not sec/km, to preserve correct % relationships.
+  // LT2 ≈ 88% vVO2max for well-trained endurance athletes (Seiler 2010, Esteve-Lanao 2007).
+  const lt2Vel  = 1000 / lt2PaceSecPerKm; // m/s
+  const vVO2max = lt2Vel / 0.88;
+  const paceAt  = (frac: number) => Math.round(1000 / (vVO2max * frac)); // sec/km
+
   return {
-    easy:       [lt1PaceSecPerKm * 1.30, lt1PaceSecPerKm * 1.08],
-    marathon:   [lt1PaceSecPerKm * 1.08, lt1PaceSecPerKm],
-    threshold:  [lt1PaceSecPerKm, lt2PaceSecPerKm],
-    interval:   [lt2PaceSecPerKm, lt2PaceSecPerKm * 0.95],
-    repetition: [lt2PaceSecPerKm * 0.95, lt2PaceSecPerKm * 0.85],
+    easy:       [paceAt(0.74), paceAt(0.59)],      // 59–74% vVO2max
+    marathon:   [paceAt(0.84), paceAt(0.75)],      // 75–84% vVO2max
+    threshold:  [lt1PaceSecPerKm, lt2PaceSecPerKm], // anchored to actual LT1/LT2
+    interval:   [paceAt(1.00), paceAt(0.95)],      // 95–100% vVO2max
+    repetition: [paceAt(1.10), paceAt(1.05)],      // 105–110% vVO2max
     vdot: 0,
   };
 }
