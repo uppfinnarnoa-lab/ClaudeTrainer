@@ -632,14 +632,26 @@ export function estimateVO2max(
     }
   }
 
-  // ── WEIGHTED MEAN — race PBs dominate when present ───────────────────────
+  // ── WEIGHTED MEAN — race PBs contribute but do not dominate ─────────────
   const hasRacePBs = racePBCandidates.length > 0 || model6Vdot !== null;
   const tsbWeight    = model7Vdot !== null ? 0.25 : 0.00;
   const hrFormWeight = model8Vdot !== null ? 0.20 : 0.00;
   const hasCurrent   = tsbWeight + hrFormWeight > 0;
-  const vdotWeight   = hasRacePBs ? (hasCurrent ? 0.35 : 0.55) : 0.00;
-  const csWeight     = model6Vdot !== null ? (hasCurrent ? 0.05 : 0.08) : 0.00;
-  const varWeight    = model4Vdot !== null ? (hasCurrent ? 0.12 : 0.18) : 0.00;
+
+  // Age-decay VDOT weight: fresh PB (≤90d) → full; stale (540+d) → 35% floor.
+  // Prevents an 18-month-old PB from dominating current-fitness signals.
+  let pbAgeFactor = 1.0;
+  if (racePBs && racePBs.length > 0) {
+    const newestPB = racePBs.reduce((latest, pb) => pb.date > latest ? pb.date : latest, racePBs[0].date);
+    const pbDaysAgo = (Date.now() - newestPB.getTime()) / 86400000;
+    pbAgeFactor = pbDaysAgo <= 90  ? 1.0
+                : pbDaysAgo >= 540 ? 0.35
+                : 1.0 - (pbDaysAgo - 90) / 450 * 0.65;
+  }
+  const vdotBase   = hasRacePBs ? (hasCurrent ? 0.28 : 0.45) : 0.00;
+  const vdotWeight = vdotBase * pbAgeFactor;
+  const csWeight   = model6Vdot !== null ? (hasCurrent ? 0.05 : 0.08) : 0.00;
+  const varWeight  = model4Vdot !== null ? (hasCurrent ? 0.12 : 0.18) : 0.00;
   type ModelEntry = [number | null, number, string];
   const models: ModelEntry[] = [
     [model1Vdot,  vdotWeight,               "VDOT (race PBs)"],
