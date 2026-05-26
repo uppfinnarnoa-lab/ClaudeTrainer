@@ -28,6 +28,8 @@ type Act = {
   startDate: Date; totalElevationGain: number;
 };
 
+type ActLight = Omit<Act, "bestEfforts">;
+
 async function loadActivities(userId: string) {
   return prisma.activity.findMany({
     where: { userId, startDate: { gte: subDays(new Date(), 5 * 365) } },
@@ -36,6 +38,20 @@ async function loadActivities(userId: string) {
       sportType: true, name: true, distance: true, movingTime: true,
       averageHeartrate: true, maxHeartrate: true, totalElevationGain: true,
       averageSpeed: true, isRace: true, bestEfforts: true, startDate: true,
+    },
+  });
+}
+
+// Light version — omits bestEfforts JSON (can be MB of data per user).
+// Use when only HR/pace/volume computation is needed and best-effort splits are irrelevant.
+async function loadActivitiesLight(userId: string) {
+  return prisma.activity.findMany({
+    where: { userId, startDate: { gte: subDays(new Date(), 5 * 365) } },
+    orderBy: { startDate: "asc" },
+    select: {
+      sportType: true, name: true, distance: true, movingTime: true,
+      averageHeartrate: true, maxHeartrate: true, totalElevationGain: true,
+      averageSpeed: true, isRace: true, startDate: true,
     },
   });
 }
@@ -222,7 +238,7 @@ export async function updateVO2maxAndPaces(userId: string) {
 export async function updateHRZones(userId: string) {
   const [profile, activities, garminRecent, existingCacheForZones] = await Promise.all([
     prisma.athleteProfile.findUnique({ where: { userId } }),
-    loadActivities(userId),
+    loadActivitiesLight(userId),
     prisma.garminDailySummary.findMany({
       where: { userId, date: { gte: subDays(new Date(), 7) } },
       orderBy: { date: "asc" }, select: { restingHR: true },
@@ -230,7 +246,8 @@ export async function updateHRZones(userId: string) {
     prisma.fitnessCache.findUnique({ where: { userId }, select: { restHR: true, tsb: true } }),
   ]);
 
-  const maxHRs = (activities as Act[]).flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
+  const acts = activities as ActLight[];
+  const maxHRs = acts.flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
   // Clean observed max: remove artifact spikes before using as filter threshold
   // Raw max(maxHRs) can be 220-230 bpm from optical sensor glitches — totally wrong
   const cleanMaxHRs = maxHRs.filter(h => h <= MAXHR_ARTIFACT_CAP);
@@ -239,11 +256,11 @@ export async function updateHRZones(userId: string) {
     ? sortedCleanMaxHRs[Math.floor(sortedCleanMaxHRs.length * 0.80)] // 80th percentile of clean values
     : 183;
 
-  const raceMaxHRs = (activities as Act[])
+  const raceMaxHRs = acts
     .filter(a => a.isRace || /tävl|race|lopp|mila|stafett|sic\b|parkrun/i.test(a.name ?? ""))
     .flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
 
-  const thresholdHRs = (activities as Act[])
+  const thresholdHRs = acts
     .filter(a => a.averageHeartrate && a.averageHeartrate > observedMax * 0.82
       && a.sportType.toLowerCase().includes("run"))
     .map(a => a.averageHeartrate!);
@@ -251,7 +268,7 @@ export async function updateHRZones(userId: string) {
   // Statistical maxHR from ALL hard runs (bucket approach):
   // Collect clean maxHR values from all runs where effort was hard (avgHR > 80% of clean observedMax).
   // Use 85th percentile — much more data-rich than single-session interval source.
-  const hardRunMaxHRs = (activities as Act[])
+  const hardRunMaxHRs = acts
     .filter(a => a.maxHeartrate && a.averageHeartrate
       && a.averageHeartrate > observedMax * 0.78   // hard effort (near LT1+)
       && /run|trail/i.test(a.sportType)
@@ -282,7 +299,7 @@ export async function updateHRZones(userId: string) {
   // HR-pace regression — GAP-corrected, excludes intervals (whole-session avgPace is
   // diluted by recovery jogs making interval sessions appear "high HR + slow pace",
   // which would flatten the slope and push LT2 estimate down)
-  const regressionRuns = (activities as Act[])
+  const regressionRuns = acts
     .filter(a => a.averageHeartrate && a.distance >= 3000 && a.movingTime > 0
       && /run|trail/i.test(a.sportType)
       && !/intervall|interval|fartlek|tisdagsbana|bana\b/i.test(a.name ?? ""))
@@ -307,7 +324,7 @@ export async function updateHRZones(userId: string) {
   // ── Method 2: Statistical zone analysis from bucketed training data ───
   // Uses all running activities, finds LT1/LT2 as deflection points in the
   // HR-pace curve. Applied directly when R² ≥ 0.80 (high confidence).
-  const statRuns = (activities as Act[])
+  const statRuns = acts
     .filter(a => a.averageHeartrate && /run|trail/i.test(a.sportType)
       && a.distance >= 4000 && a.movingTime >= 900)
     .map(a => ({
@@ -338,10 +355,10 @@ export async function updateHRZones(userId: string) {
   const zonesJson = { z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5 };
 
   const vo2maxResult = estimateVO2max(
-    (activities as Act[]).map(a => ({
+    acts.map(a => ({
       distanceM: a.distance, timeSec: a.movingTime,
       avgHR: a.averageHeartrate, isRace: a.isRace,
-      sportType: a.sportType, name: a.name, bestEfforts: a.bestEfforts,
+      sportType: a.sportType, name: a.name,
       startDate: a.startDate, totalElevationGain: a.totalElevationGain,
     })),
     maxHR, restHR, racePBs, undefined,
@@ -367,7 +384,7 @@ export async function updateHRZones(userId: string) {
   const zoneSecondsJson = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 } as Record<string, number>;
   let polZ1 = 0, polZ2 = 0, polZ3 = 0;
   const lt1hr2 = hz2.z2[1], lt2hr2 = hz2.z4[0];
-  for (const a of activities as Act[]) {
+  for (const a of acts) {
     if (a.startDate < twelveWeeksAgo || !a.averageHeartrate) continue;
     const hr = a.averageHeartrate;
     const z = hr < hz2.z1[1] ? 1 : hr < hz2.z2[1] ? 2 : hr < hz2.z3[1] ? 3 : hr < hz2.z4[1] ? 4 : 5;
