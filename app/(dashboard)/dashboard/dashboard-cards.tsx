@@ -16,7 +16,7 @@ interface Props {
 }
 
 function fmt(m: number) { return `${(m / 1000).toFixed(0)} km`; }
-function fmtKm(km: number) { return `${km.toLocaleString("sv-SE")} km`; }
+function fmtKm(km: number) { return `${Math.round(km).toLocaleString("sv-SE")} km`; }
 
 export function DashboardCards({ all, run, fitnessLabel, fitnessPrimary, fitnessSub }: Props) {
   const [mode, setMode] = useState<"all" | "run">("all");
