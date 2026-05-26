@@ -81,4 +81,10 @@ export const tooltips: Record<string, Tooltip> = {
     why: "Consistency is the most important long-term performance driver. No single session matters as much as showing up reliably.",
     range: "85%+: elite-level adherence. 70–84%: solid. Below 60%: investigate why sessions are being missed.",
   },
+  easyPaceTrend: {
+    title: "Aerobic Pace Trend",
+    what: "Monthly median Grade-Adjusted Pace (GAP) on easy runs — runs below LT1 HR, ≥ 6 km, and not races. GAP corrects for hills so a hilly route doesn't look slower than a flat one.",
+    why: "A downward trend (faster pace at the same easy effort) is the clearest sign that your aerobic base is improving. Needs ≥ 3 qualifying sessions per period to appear.",
+    range: "Expect improvement of 10–30 sec/km per year with consistent easy running.",
+  },
 };

@@ -11,6 +11,8 @@ interface Profile {
   sex?: string | null;
   maxHeartRate?: number | null;
   restingHeartRate?: number | null;
+  manualLT1HR?: number | null;
+  manualLT2HR?: number | null;
   primaryGoal?: string | null;
   yearsTraining?: number | null;
 }
@@ -94,6 +96,18 @@ export function AthleteProfileForm({ initial }: { initial: Profile }) {
         <input type="number" min={30} max={100} step={1}
           value={form.restingHeartRate ?? ""} onChange={e => set("restingHeartRate", e.target.value)}
           placeholder="auto from Garmin" className={inputCls} />
+      </Field>
+
+      <Field label="LT1 — aerobic threshold (bpm)" hint="Leave blank to estimate from training data. Overrides estimation only.">
+        <input type="number" min={80} max={220} step={1}
+          value={form.manualLT1HR ?? ""} onChange={e => set("manualLT1HR", e.target.value)}
+          placeholder="auto-estimated" className={inputCls} />
+      </Field>
+
+      <Field label="LT2 — lactate threshold (bpm)" hint="Leave blank to estimate from race PBs and training data. Overrides estimation only.">
+        <input type="number" min={80} max={220} step={1}
+          value={form.manualLT2HR ?? ""} onChange={e => set("manualLT2HR", e.target.value)}
+          placeholder="auto-estimated" className={inputCls} />
       </Field>
 
       <Field label="Years of structured training" hint="Helps the coach calibrate advice to your experience">

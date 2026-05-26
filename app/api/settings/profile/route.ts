@@ -12,6 +12,8 @@ const schema = z.object({
   sex:             z.enum(["male", "female", "other", ""]).optional().nullable(),
   maxHeartRate:    z.coerce.number().min(100).max(230).optional().nullable(),
   restingHeartRate:z.coerce.number().min(20).max(100).optional().nullable(),
+  manualLT1HR:     z.coerce.number().min(80).max(220).optional().nullable(),
+  manualLT2HR:     z.coerce.number().min(80).max(220).optional().nullable(),
   primaryGoal:     z.string().max(200).optional().nullable(),
   yearsTraining:   z.coerce.number().int().min(0).max(80).optional().nullable(),
 });
@@ -46,8 +48,13 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
-  // When HR limits are manually set, recalibrate zones immediately so stats reflect the override
-  if (parsed.data.maxHeartRate !== undefined || parsed.data.restingHeartRate !== undefined) {
+  // When HR or LT limits are manually set, recalibrate zones immediately so stats reflect the override
+  if (
+    parsed.data.maxHeartRate !== undefined ||
+    parsed.data.restingHeartRate !== undefined ||
+    parsed.data.manualLT1HR !== undefined ||
+    parsed.data.manualLT2HR !== undefined
+  ) {
     updateHRZones(session.user.id).catch(e => console.error("[profile] HR recalibration error:", e));
   }
 

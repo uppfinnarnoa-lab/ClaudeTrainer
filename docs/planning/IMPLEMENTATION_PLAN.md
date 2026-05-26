@@ -1634,6 +1634,24 @@ GOOGLE_AI_API_KEY=""
 - `app/(dashboard)/stats/page.tsx`: new `computeWeatherStats(acts)` — temp bands (<5, 5–10, 10–15, 15–20, >20°C) and wind bands (Calm <10, Light 10–20, Moderate 20–30, Strong >30 km/h); per band: count + avg pace sec/km; runs across all time (no date limit); result passed to client as `weatherStats: WeatherStats | null`
 - `app/(dashboard)/stats/stats-client.tsx`: `WeatherProfileCard` renders two bar sections (byTemp, byWind); bar width relative to session count; pace color-coded (accent = fastest, error = 15+ s/km slower); wrapped in `<>...</>` fragment alongside analytics grid to support multiple JSX roots inside `{analytics && (}`
 
+**Session 2026-05-27 (LT1/LT2 override + dashboard widgets + easy pace trend + R² in UI):**
+- `prisma/schema.prisma`: added `manualLT1HR Int?` and `manualLT2HR Int?` to `AthleteProfile` — user-settable LT threshold overrides; estimation never writes here; applied via `prisma db push`
+- `lib/fitness/zones.ts` `buildHRZones()`: LT1 percentage raised from 0.80 → 0.83; LT2 stays at 0.89
+- `lib/fitness/zones.ts` `estimateLTFromRaces()`: fallback maxHR percentage for LT1 raised from 0.78 → 0.82 in both fallback paths
+- `lib/fitness/cache.ts` `updateHRZones()`: manual LT1/LT2 override block added — if `profile.manualLT1HR` and `profile.manualLT2HR` are both set and physiologically valid, builds zones via `buildHRZonesFromLT` and applies them; estimation result is never written back to profile; function now also returns `rSquared`, `zonesMethod` ("statistical"/"race-pbs"/"fallback"/"manual"), `lt1HR`, `lt2HR`
+- `app/(dashboard)/settings/athlete-profile.tsx`: added LT1 and LT2 input fields (same pattern as maxHR/restHR override)
+- `app/api/settings/profile/route.ts`: `manualLT1HR` and `manualLT2HR` added to Zod schema; included in recalibration trigger condition
+- `app/(dashboard)/settings/page.tsx`: `manualLT1HR` and `manualLT2HR` passed to AthleteProfileForm
+- `app/(dashboard)/dashboard/page.tsx`: added `allLyYtd` query; computed `allOnPaceKm`, `allLyYtdKm`, `runAvgWeekKm`, `allAvgWeekKm`, `weeksElapsed`; updated DashboardCards props
+- `app/(dashboard)/dashboard/dashboard-cards.tsx`: complete rewrite — added `SportExtra { onPaceKm, lyYtdKm, avgWeekKm }` interface; separated "On pace", "Avg/week YTD", and "YTD runs/sessions" into dedicated `TrendCard` components for both Running and All sports sections
+- `app/(dashboard)/stats/page.tsx`: added `computeEasyPaceTrend(acts, lt1HR)` — groups running activities (HR < LT1, ≥ 6km, not race) by month, computes median GAP per month, requires ≥ 3 sessions; runs in both fast and slow paths; exports `EasyPacePoint` type
+- `components/charts/EasyPaceTrendChart.tsx`: NEW — Recharts LineChart showing monthly median GAP on easy runs; Y-axis reversed (lower = faster = higher); linear regression trend line (dashed); quarterly grouping toggle (auto-enabled when > 18 months); custom tooltip with tempo, avgHR, count
+- `app/(dashboard)/stats/stats-client.tsx`: `EasyPaceTrendChart` added to Fitness section (visible when ≥ 3 months of data); uses `tooltips.easyPaceTrend` for info tooltip
+- `lib/fitness/tooltips.ts`: added `easyPaceTrend` tooltip entry
+- `app/api/coach/calibrate/route.ts`: algorithmic response now includes `rSquared`, `zonesMethod`, `lt1HR`, `lt2HR` from `updateHRZones()` result
+- `app/(dashboard)/stats/stats-client.tsx` `ZoneCalibrationButton`: result panel now shows LT1/LT2 bpm, method name, and R² (when statistical method ran); useful for debugging without reading server logs
+- `CLAUDE.md`: Session End section updated — added step 3: restart dev server after every task
+
 **VO2max weighted model configuration (as of 2026-05-26):**
 | Model | With TSB+HR signals | No current signals |
 |---|---|---|

@@ -150,7 +150,8 @@ export default async function StatsPage() {
     // Fetch last 2 years for load curve; zone/pace/analytics calculations filter internally to 12 weeks
     const recentForCurve = await prisma.activity.findMany({
       where: { userId, startDate: { gte: subDays(now, 730) } },
-      select: { movingTime: true, averageHeartrate: true, startDate: true, sportType: true, averageSpeed: true },
+      select: { movingTime: true, averageHeartrate: true, startDate: true, sportType: true, averageSpeed: true,
+        distance: true, totalElevationGain: true, isRace: true },
       orderBy: { startDate: "asc" },
     });
     const curveTSSMap = new Map<string, number>();
@@ -273,11 +274,14 @@ export default async function StatsPage() {
       tempSensitivity: null,
     };
 
+    const fpEasyPaceTrend = computeEasyPaceTrend(recentForCurve as EasyPaceAct[], hrZones.z3[0]);
+
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
       null, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, null,
       fitnessCache.decouplingLt1HR ?? null, fitnessCache.criticalSpeedMs ?? null,
-      profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats);
+      profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
+      fpEasyPaceTrend);
   }
 
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
@@ -698,13 +702,16 @@ export default async function StatsPage() {
     computedMaxHR, restHR,
   );
 
+  const easyPaceTrend = computeEasyPaceTrend(activities as EasyPaceAct[], computedHrZones.z3[0]);
+
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, computedHrZones, vo2max, effectivePaceZones, predictions, polarisation, acwr, statZones, overviewRun,
     { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
     modelPredictions, modelVdots,
     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear },
     fitnessCache?.decouplingLt1HR ?? null, fitnessCache?.criticalSpeedMs ?? null,
-    profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats);
+    profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
+    easyPaceTrend);
 }
 
 // Shared render — used by both fast and slow paths
@@ -752,6 +759,7 @@ function renderStats(
   manualMaxHR?: number | null,
   manualRestHR?: number | null,
   weatherStats?: WeatherStats,
+  easyPaceTrend?: EasyPacePoint[],
 ) {
   return (
     <div className="space-y-2">
@@ -786,6 +794,7 @@ function renderStats(
         manualMaxHR={manualMaxHR ?? null}
         manualRestHR={manualRestHR ?? null}
         weatherStats={weatherStats ?? null}
+        easyPaceTrend={easyPaceTrend ?? []}
       />
       </StatsErrorBoundary>
     </div>
@@ -843,6 +852,47 @@ function computeWeatherStats(
     byTemp: computeBands(TEMP_BANDS, a => a.weatherTemp),
     byWind: computeBands(WIND_BANDS, a => a.weatherWind),
   };
+}
+
+// ── Easy run pace trend ──────────────────────────────────────────────────────
+
+export type EasyPacePoint = { month: string; medianGap: number; avgHR: number; count: number };
+
+type EasyPaceAct = {
+  sportType: string; startDate: Date; distance: number; movingTime: number;
+  totalElevationGain: number; averageHeartrate: number | null; isRace: boolean;
+};
+
+function computeEasyPaceTrend(acts: EasyPaceAct[], lt1HR: number): EasyPacePoint[] {
+  const byMonth = new Map<string, Array<{ gap: number; hr: number }>>();
+  for (const a of acts) {
+    if (!a.averageHeartrate || a.isRace) continue;
+    if (!/run|trail/i.test(a.sportType)) continue;
+    if (a.averageHeartrate >= lt1HR) continue;
+    if (a.distance < 6000 || a.movingTime < 1200) continue;
+    const rawPace = a.movingTime / (a.distance / 1000);
+    const grade = Math.min(0.15, Math.max(0, a.totalElevationGain / a.distance));
+    const gap = rawPace / (1 + grade * 0.033);
+    const month = format(a.startDate, "yyyy-MM");
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month)!.push({ gap, hr: a.averageHeartrate });
+  }
+  const result: EasyPacePoint[] = [];
+  for (const [month, pts] of [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (pts.length < 3) continue;
+    const sorted = [...pts].sort((a, b) => a.gap - b.gap);
+    const mid = Math.floor(sorted.length / 2);
+    const medianGap = sorted.length % 2 === 0
+      ? (sorted[mid - 1].gap + sorted[mid].gap) / 2
+      : sorted[mid].gap;
+    result.push({
+      month,
+      medianGap: Math.round(medianGap),
+      avgHR: Math.round(pts.reduce((s, p) => s + p.hr, 0) / pts.length),
+      count: pts.length,
+    });
+  }
+  return result;
 }
 
 function normalizeSport(t: string): string {

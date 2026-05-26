@@ -35,6 +35,10 @@ export async function POST(req: Request) {
       zones: cache.zones, paces: cache.paces,
       computedAt: cache.computedAt,
       aiInsights: null,
+      rSquared: result.rSquared ?? null,
+      zonesMethod: result.zonesMethod,
+      lt1HR: result.lt1HR,
+      lt2HR: result.lt2HR,
     });
   }
 

@@ -56,7 +56,7 @@ export default async function DashboardPage() {
     activityCount, stravaAccount, fitnessCache,
     weekData, monthData, ytdData,
     runWeek, runMonth, runYtd,
-    prev4w, runLyYtd,
+    prev4w, runLyYtd, allLyYtd,
   ] = await Promise.all([
     prisma.activity.count({ where: { userId } }),
     prisma.stravaAccount.findUnique({ where: { userId }, select: { totalSynced: true, lastSyncAt: true } }),
@@ -69,6 +69,7 @@ export default async function DashboardPage() {
     aggSince(userId, yearStart,  "run"),
     aggSince(userId, fourWeeksAgo),
     aggSince(userId, lyYearStart, "run", lyToday),
+    aggSince(userId, lyYearStart, undefined, lyToday),
   ]);
 
   // Use FitnessCache for ATL/CTL/TSB — eliminates the 365-day activity fetch
@@ -80,9 +81,20 @@ export default async function DashboardPage() {
   const acwr = fitnessCache?.acwr ?? null;
 
   const avgWeekKm4w = prev4w.km / 1000 / 4;
-  const runYtdKm = runYtd.km / 1000;
-  const onPaceKm = Math.round((runYtdKm / dayOfYear) * 365);
-  const lyYtdKm  = Math.round(runLyYtd.km / 1000);
+  const runYtdKm  = runYtd.km / 1000;
+  const allYtdKm  = ytdData.km / 1000;
+  const weeksElapsed = dayOfYear / 7;
+
+  const runOnPaceKm  = Math.round((runYtdKm / dayOfYear) * 365);
+  const allOnPaceKm  = Math.round((allYtdKm / dayOfYear) * 365);
+  const runLyYtdKm   = Math.round(runLyYtd.km / 1000);
+  const allLyYtdKm   = Math.round(allLyYtd.km / 1000);
+  const runAvgWeekKm = Math.round((runYtdKm / weeksElapsed) * 10) / 10;
+  const allAvgWeekKm = Math.round((allYtdKm / weeksElapsed) * 10) / 10;
+
+  // Keep legacy alias for backward compat in the component
+  const onPaceKm = runOnPaceKm;
+  const lyYtdKm  = runLyYtdKm;
 
   const insights = generateInsights({
     weekKm:  weekData.km / 1000,   weekSec:  weekData.sec,   weekCount: weekData.count,
@@ -119,6 +131,9 @@ export default async function DashboardPage() {
           week:  { km: weekData.km / 1000,  sec: weekData.sec,  count: weekData.count },
           month: { km: monthData.km / 1000, sec: monthData.sec, count: monthData.count },
           ytd:   { km: ytdData.km / 1000,   sec: ytdData.sec,   count: ytdData.count },
+          onPaceKm: allOnPaceKm,
+          lyYtdKm:  allLyYtdKm,
+          avgWeekKm: allAvgWeekKm,
         }}
         run={{
           week:  { km: runWeek.km / 1000,  sec: runWeek.sec,  count: runWeek.count },
@@ -126,6 +141,7 @@ export default async function DashboardPage() {
           ytd:   { km: runYtd.km / 1000,   sec: runYtd.sec,   count: runYtd.count },
           onPaceKm,
           lyYtdKm,
+          avgWeekKm: runAvgWeekKm,
         }}
         fitnessLabel={fitnessCache ? "Fitness (CTL)" : "Activities synced"}
         fitnessPrimary={fitnessCache ? todayLoad.ctl.toFixed(0) : activityCount.toLocaleString()}

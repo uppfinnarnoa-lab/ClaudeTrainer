@@ -346,12 +346,40 @@ export async function updateHRZones(userId: string) {
 
   const statResult = estimateZonesFromStatisticalAnalysis(statRuns, maxHR, restHR);
 
+  let zonesMethod: "statistical" | "race-pbs" | "fallback" | "manual" =
+    lt.source === "race-pbs" ? "race-pbs" : "fallback";
+  let rSquared: number | undefined;
+  let calibLT1HR: number = hrZones.z2[1];
+  let calibLT2HR: number = hrZones.z4[0];
+
   if (statResult && statResult.rSquared >= 0.80) {
-    // High-confidence statistical estimate — use directly (it's based on actual training data)
     hrZones = statResult.zones;
+    zonesMethod = "statistical";
+    rSquared = statResult.rSquared;
+    calibLT1HR = statResult.lt1HR;
+    calibLT2HR = statResult.lt2HR;
     console.log(`[zones] Statistical analysis applied: LT1=${statResult.lt1HR}bpm LT2=${statResult.lt2HR}bpm R²=${statResult.rSquared} (${statResult.bucketCount} buckets)`);
   } else if (statResult) {
+    rSquared = statResult.rSquared;
     console.log(`[zones] Statistical analysis insufficient: R²=${statResult.rSquared} (${statResult.bucketCount} buckets) — using race-PB method`);
+  }
+
+  // Manual LT1/LT2 override — wins over all estimation if both are set.
+  // Never written by estimation; only set by the user in Settings.
+  const manualLT1 = profile?.manualLT1HR;
+  const manualLT2 = profile?.manualLT2HR;
+  if (manualLT1 && manualLT2 && manualLT1 < manualLT2 && manualLT2 < maxHR) {
+    const overrideZones = buildHRZonesFromLT(
+      { lt1HR: manualLT1, lt2HR: manualLT2, lt1PaceSecPerKm: 0, lt2PaceSecPerKm: 0, source: "race-pbs" },
+      maxHR, restHR,
+    );
+    if (ensureValidZones(overrideZones)) {
+      hrZones = overrideZones;
+      zonesMethod = "manual";
+      calibLT1HR = manualLT1;
+      calibLT2HR = manualLT2;
+      console.log(`[zones] Manual LT override applied: LT1=${manualLT1}bpm LT2=${manualLT2}bpm`);
+    }
   }
 
   // Final guard: if estimation produced non-monotonic zones, fall back to fixed percentages
@@ -438,7 +466,7 @@ export async function updateHRZones(userId: string) {
   // Writing here would lock in a stale estimate that prevents future recalibration.
   // The calibration result is stored exclusively in FitnessCache.
 
-  return { maxHR, restHR, thresholdHR, zones: zonesJson, vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot };
+  return { maxHR, restHR, thresholdHR, zones: zonesJson, vo2max: vo2maxResult.value, vdot: vo2maxResult.vdot, rSquared, zonesMethod, lt1HR: calibLT1HR, lt2HR: calibLT2HR };
 }
 
 export async function computeAndCacheFitness(userId: string) {

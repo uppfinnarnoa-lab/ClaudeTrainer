@@ -7,6 +7,7 @@ import { FitnessMetrics } from "@/components/stats/fitness-metrics";
 import { WeeklyVolumeChart } from "@/components/charts/WeeklyVolumeChart";
 import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { HRZonesChart } from "@/components/charts/HRZonesChart";
+import { EasyPaceTrendChart } from "@/components/charts/EasyPaceTrendChart";
 import { MetricTooltip } from "@/components/stats/metric-tooltip";
 import { tooltips } from "@/lib/fitness/tooltips";
 import { secPerKmToPaceStr } from "@/lib/fitness/paces";
@@ -15,7 +16,7 @@ import type { DailyLoad } from "@/lib/fitness/training-load";
 import { tsbLabel } from "@/lib/fitness/training-load";
 import type { HRZones, PaceZones, StatisticalZoneResult } from "@/lib/fitness/zones";
 import type { VO2maxEstimate } from "@/lib/fitness/vo2max";
-import type { WeatherStats } from "@/app/(dashboard)/stats/page";
+import type { WeatherStats, EasyPacePoint } from "@/app/(dashboard)/stats/page";
 import { cn } from "@/lib/utils";
 
 interface SumData { km: number; timeSec: number; count: number }
@@ -60,6 +61,7 @@ interface Props {
   manualMaxHR: number | null;
   manualRestHR: number | null;
   weatherStats: WeatherStats | null;
+  easyPaceTrend: EasyPacePoint[];
   extraViz: {
     heatmapData: { week: string; km: number }[];
     monthlyOverlay: { month: string; year: number; km: number }[];
@@ -83,7 +85,7 @@ export function StatsClient(props: Props) {
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics, paceZoneSeconds,
-    modelPredictions, modelVdots, extraViz, decouplingLt1HR, criticalSpeedMs, manualMaxHR, manualRestHR, weatherStats } = props;
+    modelPredictions, modelVdots, extraViz, decouplingLt1HR, criticalSpeedMs, manualMaxHR, manualRestHR, weatherStats, easyPaceTrend } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -383,6 +385,16 @@ export function StatsClient(props: Props) {
             </>
           )}
 
+          {/* Easy pace trend */}
+          {easyPaceTrend.length >= 3 && (
+            <SectionCard
+              title="Aerobic pace trend"
+              tips={[tooltips.easyPaceTrend]}
+            >
+              <EasyPaceTrendChart data={easyPaceTrend} />
+            </SectionCard>
+          )}
+
           {/* VDOT trend over time */}
           {extraViz && extraViz.vdotTrend.length >= 4 && (
             <VdotTrendCard data={extraViz.vdotTrend} />
@@ -607,7 +619,7 @@ function PaceZoneCard({ pzs, paceZones }: { pzs: Record<string, number>; paceZon
 
 function ZoneCalibrationButton() {
   const [loading, setLoading] = useState<"algo" | "ai" | null>(null);
-  const [result, setResult] = useState<{ insights?: string | null; maxHR?: number; vo2max?: number; aiApplied?: boolean } | null>(null);
+  const [result, setResult] = useState<{ insights?: string | null; maxHR?: number; vo2max?: number; aiApplied?: boolean; rSquared?: number | null; zonesMethod?: string; lt1HR?: number; lt2HR?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const calibrate = useCallback(async (mode: "algorithmic" | "ai") => {
@@ -622,6 +634,10 @@ function ZoneCalibrationButton() {
         maxHR: data.maxHR,
         vo2max: data.vo2max,
         aiApplied: data.aiApplied,
+        rSquared: data.rSquared,
+        zonesMethod: data.zonesMethod,
+        lt1HR: data.lt1HR,
+        lt2HR: data.lt2HR,
       });
     } catch (e) {
       setError(mode === "ai" ? "AI-kalibrering misslyckades — kontrollera API-nyckeln i Inställningar." : "Kalibrering misslyckades.");
@@ -654,6 +670,11 @@ function ZoneCalibrationButton() {
           <p className="font-medium text-primary">
             {result.aiApplied ? "AI-zoner tillämpade" : "Zoner uppdaterade"} — max HR {result.maxHR} bpm · VO2max {result.vo2max?.toFixed(1)}
             <a href="/stats" className="ml-2 text-accent hover:underline font-normal">ladda om sidan</a>
+          </p>
+          <p>
+            {result.lt1HR && result.lt2HR && <>LT1 {result.lt1HR} bpm · LT2 {result.lt2HR} bpm · </>}
+            metod: {result.zonesMethod ?? "—"}
+            {result.rSquared != null && <> · R² {result.rSquared.toFixed(2)}</>}
           </p>
           {result.insights && <p className="italic">{result.insights}</p>}
         </div>

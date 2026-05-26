@@ -94,8 +94,8 @@ export function estimateMaxHRFromThreshold(thresholdHRs: number[]): number | nul
 export function buildHRZones(maxHR: number, restHR: number = 45): HRZones {
   const pct = (p: number) => Math.round(maxHR * p);
 
-  const lt1 = pct(0.80);  // LT1 ≈ 80% for trained runners (was 78%)
-  const lt2 = pct(0.89);  // LT2 ≈ 89% for trained runners (was 88%)
+  const lt1 = pct(0.83);  // LT1 ≈ 83% for well-trained runners (raised from 80% — observational calibration)
+  const lt2 = pct(0.89);  // LT2 ≈ 89% for trained runners
 
   // Z2 width: ~7% of LT1 value → gives meaningful aerobic zone (~10-12 bpm)
   const z2width = Math.max(8, Math.round(lt1 * 0.07));
@@ -172,7 +172,7 @@ export function estimateLTFromRaces(
 ): LTBoundaries {
   if (racePBs.length === 0) {
     return {
-      lt1HR: Math.round(maxHR * 0.78), lt2HR: Math.round(maxHR * 0.88),
+      lt1HR: Math.round(maxHR * 0.82), lt2HR: Math.round(maxHR * 0.88),
       lt1PaceSecPerKm: 0, lt2PaceSecPerKm: 0, source: "default",
     };
   }
@@ -204,7 +204,7 @@ export function estimateLTFromRaces(
 
   if (!lt2PaceSecPerKm) {
     return {
-      lt1HR: Math.round(maxHR * 0.78), lt2HR: Math.round(maxHR * 0.88),
+      lt1HR: Math.round(maxHR * 0.82), lt2HR: Math.round(maxHR * 0.88),
       lt1PaceSecPerKm: 0, lt2PaceSecPerKm: 0, source: "default",
     };
   }
@@ -226,7 +226,7 @@ export function estimateLTFromRaces(
   // Never mix sources: if either regression HR is unavailable, use percentages for BOTH.
   // Mixed sources (one from regression, one from fixed %) can invert lt1/lt2.
   const bothValid = lt1HRFromRegression !== null && lt2HRFromRegression !== null;
-  const lt1HR = bothValid ? lt1HRFromRegression! : Math.round(maxHR * 0.78);
+  const lt1HR = bothValid ? lt1HRFromRegression! : Math.round(maxHR * 0.82);
   const lt2HR = bothValid ? lt2HRFromRegression! : Math.round(maxHR * 0.88);
 
   // Final sanity: regression could theoretically invert values with unusual data

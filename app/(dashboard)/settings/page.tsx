@@ -113,6 +113,8 @@ export default async function SettingsPage() {
           sex: athleteProfile?.sex,
           maxHeartRate: athleteProfile?.maxHeartRate,
           restingHeartRate: athleteProfile?.restingHeartRate,
+          manualLT1HR: athleteProfile?.manualLT1HR,
+          manualLT2HR: athleteProfile?.manualLT2HR,
           primaryGoal: athleteProfile?.primaryGoal,
           yearsTraining: athleteProfile?.yearsTraining,
         }} />
