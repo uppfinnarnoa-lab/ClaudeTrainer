@@ -55,6 +55,9 @@ interface Props {
   modelPredictions: Record<string, { label: string; meters: number; peak: number }[]>;
   modelVdots: Record<string, number>;
   decouplingLt1HR: number | null;
+  criticalSpeedMs: number | null;
+  manualMaxHR: number | null;
+  manualRestHR: number | null;
   extraViz: {
     heatmapData: { week: string; km: number }[];
     monthlyOverlay: { month: string; year: number; km: number }[];
@@ -78,7 +81,7 @@ export function StatsClient(props: Props) {
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, analytics, paceZoneSeconds,
-    modelPredictions, modelVdots, extraViz, decouplingLt1HR } = props;
+    modelPredictions, modelVdots, extraViz, decouplingLt1HR, criticalSpeedMs, manualMaxHR, manualRestHR } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -245,7 +248,7 @@ export function StatsClient(props: Props) {
           {polarisation && <PolarisationCard pol={polarisation} zoneSeconds={zoneSeconds} />}
 
           {/* HR zone table with LT/AT boundaries */}
-          <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} decouplingLt1HR={decouplingLt1HR} />
+          <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} decouplingLt1HR={decouplingLt1HR} criticalSpeedMs={criticalSpeedMs} manualMaxHR={manualMaxHR} manualRestHR={manualRestHR} />
         </div>
       )}
 
@@ -564,10 +567,13 @@ const ZONE_META = [
   { key: "z5", label: "Z5", name: "VO2max",    color: "#EF4444", purpose: "Above LT2 — develops top-end aerobic power" },
 ];
 
-function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR }: {
+function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manualMaxHR, manualRestHR }: {
   hrZones: HRZones;
   ltBounds: { lt1: number; lt2: number; ltTrainingRange: [number, number]; atTrainingRange: [number, number] };
   decouplingLt1HR?: number | null;
+  criticalSpeedMs?: number | null;
+  manualMaxHR?: number | null;
+  manualRestHR?: number | null;
 }) {
   const zones: Record<string, [number, number]> = {
     z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5,
@@ -575,9 +581,24 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR }: {
 
   return (
     <div className="rounded-xl border border-border overflow-hidden">
-      <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm font-semibold text-primary">HR zones — intervals & thresholds</p>
-        <p className="text-xs text-muted">Max HR: {hrZones.maxHR} bpm · Rest HR: {hrZones.restHR} bpm</p>
+        <div className="text-xs text-muted space-y-0.5 text-right">
+          <p>
+            Max HR:{" "}
+            <span className="font-mono font-medium text-primary">{hrZones.maxHR} bpm</span>
+            {manualMaxHR != null
+              ? <span className="ml-1 text-[10px] text-accent">(manuell)</span>
+              : <span className="ml-1 text-[10px] text-muted">(estimerat)</span>}
+          </p>
+          <p>
+            Vila HR:{" "}
+            <span className="font-mono font-medium text-primary">{hrZones.restHR} bpm</span>
+            {manualRestHR != null
+              ? <span className="ml-1 text-[10px] text-accent">(manuell)</span>
+              : <span className="ml-1 text-[10px] text-muted">(estimerat)</span>}
+          </p>
+        </div>
       </div>
 
       {/* Zone rows */}
@@ -656,6 +677,30 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR }: {
                 : "Stor avvikelse — kör backfill för mer träningsdata."}
             </p>
           )}
+        </div>
+      </div>
+
+      {/* Parallel LT2 estimates */}
+      <div className="border-t border-border px-4 py-3">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">LT2 — parallella estimat</p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted">HR-pace regression (aktiv)</span>
+            <span className="font-mono text-sm font-semibold text-primary">{ltBounds.lt2} bpm</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted">
+              Critical Speed
+              {criticalSpeedMs == null && (
+                <span className="ml-1 text-[10px] text-warning">(kräver best efforts via backfill)</span>
+              )}
+            </span>
+            <span className={`font-mono text-sm font-semibold ${criticalSpeedMs != null ? "text-primary" : "text-muted"}`}>
+              {criticalSpeedMs != null
+                ? `${(criticalSpeedMs * 60).toFixed(0) === "0" ? "—" : `${Math.round(1000 / criticalSpeedMs / 60)}:${String(Math.round(1000 / criticalSpeedMs) % 60).padStart(2, "0")} /km`}`
+                : "—"}
+            </span>
+          </div>
         </div>
       </div>
     </div>

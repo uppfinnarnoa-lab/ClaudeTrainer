@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
-/* ── Light mode (default) ── */
-:root {
+/* ── Theme: Forest (default) ── */
+:root,
+.scheme-forest {
   --background:    #F8FAFC;
   --surface:       #FFFFFF;
   --surface-2:     #F1F5F9;
@@ -20,9 +21,9 @@
   --sport-rski:    #0EA5E9;
   --sport-strength:#F87171;
 }
-
-/* ── Dark mode ── */
-.dark {
+.dark,
+.dark.scheme-forest,
+.scheme-forest.dark {
   --background:    #0F1117;
   --surface:       #1A1D27;
   --surface-2:     #222534;
@@ -31,6 +32,87 @@
   --accent-2:      #818CF8;
   --text-primary:  #F1F5F9;
   --text-muted:    #94A3B8;
+  --error:         #F87171;
+  --warning:       #FBBF24;
+}
+
+/* ── Theme: Ocean ── */
+.scheme-ocean {
+  --background:    #F0F9FF;
+  --surface:       #FFFFFF;
+  --surface-2:     #E0F2FE;
+  --border:        #BAE6FD;
+  --accent:        #0284C7;
+  --accent-2:      #7C3AED;
+  --text-primary:  #0C4A6E;
+  --text-muted:    #0369A1;
+  --error:         #DC2626;
+  --warning:       #D97706;
+}
+.dark.scheme-ocean,
+.scheme-ocean.dark {
+  --background:    #0A1628;
+  --surface:       #0F2340;
+  --surface-2:     #162D50;
+  --border:        #1E3A5F;
+  --accent:        #38BDF8;
+  --accent-2:      #A78BFA;
+  --text-primary:  #E0F2FE;
+  --text-muted:    #7DD3FC;
+  --error:         #F87171;
+  --warning:       #FBBF24;
+}
+
+/* ── Theme: Ember ── */
+.scheme-ember {
+  --background:    #FFF7ED;
+  --surface:       #FFFFFF;
+  --surface-2:     #FFEDD5;
+  --border:        #FED7AA;
+  --accent:        #EA580C;
+  --accent-2:      #DC2626;
+  --text-primary:  #431407;
+  --text-muted:    #9A3412;
+  --error:         #DC2626;
+  --warning:       #D97706;
+}
+.dark.scheme-ember,
+.scheme-ember.dark {
+  --background:    #1A0A00;
+  --surface:       #2D1200;
+  --surface-2:     #3D1A00;
+  --border:        #5C2800;
+  --accent:        #FB923C;
+  --accent-2:      #F87171;
+  --text-primary:  #FED7AA;
+  --text-muted:    #FDBA74;
+  --error:         #F87171;
+  --warning:       #FBBF24;
+}
+
+/* ── Theme: Mono ── */
+.scheme-mono {
+  --background:    #FAFAFA;
+  --surface:       #FFFFFF;
+  --surface-2:     #F4F4F5;
+  --border:        #E4E4E7;
+  --accent:        #18181B;
+  --accent-2:      #52525B;
+  --text-primary:  #09090B;
+  --text-muted:    #71717A;
+  --error:         #DC2626;
+  --warning:       #D97706;
+}
+.dark.scheme-mono,
+.scheme-mono.dark {
+  --background:    #09090B;
+  --surface:       #18181B;
+  --surface-2:     #27272A;
+  --border:        #3F3F46;
+  --accent:        #E4E4E7;
+  --accent-2:      #A1A1AA;
+  --text-primary:  #FAFAFA;
+  --text-muted:    #A1A1AA;
   --error:         #F87171;
   --warning:       #FBBF24;
 }

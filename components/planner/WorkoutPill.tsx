@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check, X } from "lucide-react";
 import type { PlannedWorkout } from "@/lib/planner/types";
 import { formatDuration, formatDistance } from "@/lib/utils";
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function WorkoutPill({ workout, isPast, onClick, compact }: Props) {
+  const [dragging, setDragging] = useState(false);
   const today = new Date().toISOString().split("T")[0];
   const canDrag = workout.date >= today;
 
@@ -22,6 +24,11 @@ export function WorkoutPill({ workout, isPast, onClick, compact }: Props) {
     e.dataTransfer.setData("workoutId", workout.id);
     e.dataTransfer.effectAllowed = "move";
     e.stopPropagation();
+    setDragging(true);
+  }
+
+  function handleDragEnd() {
+    setDragging(false);
   }
   const typeColor = workout.color
     ?? workoutColor(workout.sportType, workout.template?.type?.name ?? null);
@@ -35,11 +42,13 @@ export function WorkoutPill({ workout, isPast, onClick, compact }: Props) {
     <button
       draggable={canDrag}
       onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onClick={e => { e.stopPropagation(); onClick(workout); }}
       className={cn(
         "w-full text-left rounded-lg text-xs transition-all group relative overflow-hidden",
         "border",
         compact ? "px-2 py-0.5" : "px-2 py-1.5",
+        dragging ? "opacity-40 scale-95" :
         isMissed && showStatus    ? "opacity-55 bg-surface border-border" :
         isCompleted && showStatus ? "bg-surface border-border" :
                                     "bg-surface border-border hover:border-accent/30"

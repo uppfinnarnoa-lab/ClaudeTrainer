@@ -356,6 +356,8 @@ model FitnessCache {
   vo2maxBreakdownJson  Json?    // { modelName: vdot, ... } — per-model VDOT breakdown
   decouplingLt1HR      Float?   // LT1 from aerobic decoupling (parallel estimate)
   decouplingRunsUsed   Int?     // how many steady-state runs contributed
+  criticalSpeedMs      Float?   // Critical Speed in m/s — LT2 proxy from best efforts
+  wPrimeMeters         Float?   // W' anaerobic capacity in meters
   computedAt   DateTime @default(now()) @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

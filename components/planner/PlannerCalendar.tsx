@@ -191,7 +191,12 @@ export function PlannerCalendar({ workouts, blocks, onDayClick, onWorkoutClick, 
                           : "border-transparent hover:border-border hover:bg-surface",
                         !isCurrentMonth && "opacity-35"
                       )}
-                      style={blockHere && !isDragOver ? { backgroundColor: `${blockHere.color}22` } : undefined}
+                      style={blockHere && !isDragOver ? {
+                        backgroundColor: `${blockHere.color}22`,
+                        borderLeftColor: blockHere.color,
+                        borderLeftWidth: "3px",
+                        borderLeftStyle: "solid",
+                      } : undefined}
                     >
                       {/* Day number */}
                       <div className="mb-1">

@@ -36,7 +36,7 @@ export async function GET(
     );
 
     return NextResponse.json(data, {
-      headers: { "Cache-Control": `public, max-age=${CACHE_SECONDS}` },
+      headers: { "Cache-Control": `private, max-age=${CACHE_SECONDS}` },
     });
   } catch (e) {
     console.error("Streams fetch failed:", e);

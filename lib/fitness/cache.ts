@@ -16,6 +16,7 @@ import { prisma } from "@/lib/db/prisma";
 import { buildHRZones, buildHRZonesFromLT, buildPaceZones, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, estimateLTFromRaces, estimateZonesFromStatisticalAnalysis, ensureValidZones, MAXHR_ARTIFACT_CAP } from "./zones";
 import { estimateVO2max, buildHRPaceRegressionParams, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace, gradeAdjustedPace, personalizedFatigueExponent, type RacePB } from "./vo2max";
 import { estimateLT1FromDecoupling } from "./decoupling";
+import { estimateCriticalSpeed } from "./critical-speed";
 import { computeTSS, buildLoadCurve, computeACWR } from "./training-load";
 import { RACE_DISTANCES } from "./paces";
 import { subDays, format, startOfWeek } from "date-fns";
@@ -163,6 +164,9 @@ export async function updateVO2maxAndPaces(userId: string) {
   const personalK = personalizedFatigueExponent(allBestEfforts);
   const riegelExponent = personalK !== null ? (1 - personalK) : 1.06;
 
+  // ── Critical Speed from best efforts (LT2 proxy) ─────────────────────
+  const csResult = estimateCriticalSpeed(allBestEfforts);
+
   // ── Aerobic decoupling LT1 (parallel estimate) ────────────────────────
   // Separate query — avoids loading large splitsMetric JSON for all activities.
   const decouplingRuns = await prisma.activity.findMany({
@@ -196,6 +200,8 @@ export async function updateVO2maxAndPaces(userId: string) {
     vo2maxBreakdownJson: vo2maxResult.breakdown ?? {},
     decouplingLt1HR:   decouplingResult?.lt1HR    ?? undefined,
     decouplingRunsUsed: decouplingResult?.runsUsed ?? undefined,
+    criticalSpeedMs:   csResult?.csMetersPerSec   ?? undefined,
+    wPrimeMeters:      csResult?.wPrimeMeters      ?? undefined,
   };
 
   await prisma.fitnessCache.upsert({
