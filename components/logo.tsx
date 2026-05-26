@@ -44,9 +44,9 @@ export function Logo({ size = 32, className }: Props) {
  */
 export function LogoWordmark({ size = 32, className }: Props) {
   const fontSize   = size * 0.52;
-  // SVG right margin (2/40=5%) + font left bearing + extra optical tightening
-  // so the icon reads as the "T" in "TrainingLab" without visible gap.
-  const pullIn = -(size * 0.38);
+  // SVG right margin (2/40=5%) + font left bearing - one letter-width gap
+  // Target: same visual gap as between "r" and "a" in "rainingLab".
+  const pullIn = -(size * 0.20);
 
   return (
     <div className={`flex items-end ${className ?? ""}`} style={{ gap: 0 }}>

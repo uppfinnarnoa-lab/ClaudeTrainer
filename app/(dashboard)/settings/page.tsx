@@ -9,6 +9,7 @@ import { AISettingsSection } from "./ai-settings";
 import { AthleteProfileForm } from "./athlete-profile";
 import { ChangePasswordForm } from "./change-password";
 import { AppearanceSettings } from "./appearance-settings";
+import { AccountActions } from "./account-actions";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -133,6 +134,15 @@ export default async function SettingsPage() {
           <p className="text-xs text-muted mt-0.5">Update your login password</p>
         </div>
         <ChangePasswordForm />
+      </section>
+
+      {/* ── Account actions ── */}
+      <section className="rounded-2xl bg-surface border border-border p-6 space-y-4">
+        <div>
+          <h2 className="font-semibold text-primary">Account</h2>
+          <p className="text-xs text-muted mt-0.5">Log out or permanently delete your account and all data</p>
+        </div>
+        <AccountActions />
       </section>
     </div>
   );
