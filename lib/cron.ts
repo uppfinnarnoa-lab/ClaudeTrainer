@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { prisma } from "@/lib/db/prisma";
 import { syncActivities } from "@/lib/strava/sync";
+import { runHistoricalBackfill } from "@/lib/strava/backfill";
 import { syncGarminDaily } from "@/lib/garmin/sync";
 import { backfillWeather } from "@/lib/weather/backfill";
 
@@ -35,6 +36,25 @@ export function startCronJobs() {
         console.log(`[cron] Garmin sync ${account.userId}: done`);
       } catch (e) {
         console.error(`[cron] Garmin sync failed for ${account.userId}:`, e);
+      }
+    }
+  });
+
+  // Historical activity backfill at 00:30 UTC (just after Strava's daily limit resets at midnight)
+  // Runs until done or daily limit is hit — resumes the next night automatically.
+  cron.schedule("30 0 * * *", async () => {
+    const accounts = await prisma.stravaAccount.findMany({ select: { userId: true } });
+    for (const account of accounts) {
+      const remaining = await prisma.activity.count({
+        where: { userId: account.userId, splitDetailFetched: false },
+      });
+      if (remaining === 0) continue;
+      console.log(`[cron] Historical backfill ${account.userId}: ${remaining} remaining`);
+      try {
+        const result = await runHistoricalBackfill(account.userId);
+        console.log(`[cron] Historical backfill ${account.userId}: ${result.done} fetched, stopped=${result.stoppedAt}`);
+      } catch (e) {
+        console.error(`[cron] Historical backfill failed for ${account.userId}:`, e);
       }
     }
   });
