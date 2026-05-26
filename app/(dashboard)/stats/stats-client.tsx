@@ -300,7 +300,6 @@ export function StatsClient(props: Props) {
 
                 {/* Running Economy proxy */}
                 {analytics.reByWeek.length >= 2 && (() => {
-                  const { secPerKmToPaceStr } = require("@/lib/fitness/paces");
                   const first = analytics.reByWeek[0].paceSecPerKm;
                   const last  = analytics.reByWeek.at(-1)!.paceSecPerKm;
                   const delta = first - last; // negative delta = faster = better
