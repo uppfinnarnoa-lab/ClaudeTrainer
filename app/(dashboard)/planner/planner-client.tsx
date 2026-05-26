@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { TemplateLibrary } from "@/components/planner/TemplateLibrary";
 import { PlannerCalendar } from "@/components/planner/PlannerCalendar";
@@ -40,6 +40,28 @@ export function PlannerClient(props: Props) {
   const [showNewBlock, setShowNewBlock]         = useState(false);
 
   const today = new Date().toISOString().split("T")[0];
+
+  const editTemplate = useMemo<WorkoutTemplate | null>(() => {
+    if (!editWorkout) return null;
+    if (editWorkout.template) return editWorkout.template;
+    const sport = props.sports.find(s =>
+      s.name.toLowerCase() === editWorkout.sportType.toLowerCase()
+    ) ?? props.sports[0];
+    return {
+      id: editWorkout.id,
+      name: editWorkout.name,
+      description: editWorkout.notes,
+      sportId: sport?.id ?? "",
+      typeId: null,
+      color: editWorkout.color,
+      estimatedDuration: editWorkout.targetDuration,
+      estimatedDistance: editWorkout.targetDistance,
+      estimatedZoneDistribution: null,
+      sections: [],
+      sport: sport ?? { id: "", name: editWorkout.sportType, color: null, workoutTypes: [] },
+      type: null,
+    };
+  }, [editWorkout, props.sports]);
 
   function handleWorkoutClick(w: PlannedWorkout) {
     if (w.date > today) {
@@ -336,38 +358,19 @@ export function PlannerClient(props: Props) {
       )}
 
       {/* Workout builder — edit future workout */}
-      {editWorkout && (() => {
-        const sport = props.sports.find(s =>
-          s.name.toLowerCase() === editWorkout.sportType.toLowerCase()
-        ) ?? props.sports[0];
-        const editTemplate: WorkoutTemplate = editWorkout.template ?? {
-          id: editWorkout.id,
-          name: editWorkout.name,
-          description: editWorkout.notes,
-          sportId: sport?.id ?? "",
-          typeId: null,
-          color: editWorkout.color,
-          estimatedDuration: editWorkout.targetDuration,
-          estimatedDistance: editWorkout.targetDistance,
-          estimatedZoneDistribution: null,
-          sections: [],
-          sport: sport ?? { id: "", name: editWorkout.sportType, color: null, workoutTypes: [] },
-          type: null,
-        };
-        return (
-          <WorkoutBuilder
-            sports={props.sports}
-            paceZones={props.paceZoneRanges}
-            hrZones={props.hrZoneRanges}
-            editTemplate={editTemplate}
-            initialDate={editWorkout.date}
-            plannedWorkoutMode
-            onSave={handleEditBuilderSave}
-            onDelete={() => { handleDeleteWorkout(editWorkout.id); setEditWorkout(null); }}
-            onCancel={() => setEditWorkout(null)}
-          />
-        );
-      })()}
+      {editWorkout && editTemplate && (
+        <WorkoutBuilder
+          sports={props.sports}
+          paceZones={props.paceZoneRanges}
+          hrZones={props.hrZoneRanges}
+          editTemplate={editTemplate}
+          initialDate={editWorkout.date}
+          plannedWorkoutMode
+          onSave={handleEditBuilderSave}
+          onDelete={() => { handleDeleteWorkout(editWorkout.id); setEditWorkout(null); }}
+          onCancel={() => setEditWorkout(null)}
+        />
+      )}
 
       {/* Block editor — new or edit */}
       {(showNewBlock || editingBlock) && (

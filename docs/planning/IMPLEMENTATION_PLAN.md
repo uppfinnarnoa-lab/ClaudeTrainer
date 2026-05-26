@@ -479,6 +479,10 @@ This enables personalized pacing advice (weight-adjusted), realistic VO2max benc
 
 **AI Coach** — Provider selector (Claude / Gemini), API key fields with show/hide toggle, monthly budget with spend progress bar and warning thresholds (80% = yellow, 100% = red).
 
+**Account** — Bottom section with two actions:
+- **Log out** — calls `next-auth/react` `signOut({ callbackUrl: "/login" })`
+- **Delete account** — two-step inline confirm; calls `DELETE /api/settings/account`, which runs `prisma.user.delete` (cascades to all user-owned rows via `onDelete: Cascade`), then signs out
+
 ### 6.2 Strava Integration
 
 **OAuth Flow:**
@@ -690,6 +694,12 @@ Each card has an `ⓘ` tooltip and a sparkline showing the last 8 weeks trend.
 - = CTL − ATL, with colored bands: fresh / optimal / fatigued / overreaching
 - Tooltip: *"Form indicator. Negative = carrying fatigue (normal in heavy training). Positive = fresh. Race when TSB is +5 to +25 after a taper."*
 
+**Training Load chart implementation:**
+- Renders ATL, CTL, TSB as a multi-line Recharts chart (`TrainingLoadChart.tsx`)
+- **Time range selector**: 3M / 6M / 1Y / 2Y buttons (top-right of chart) — slices the data client-side
+- Data window: server queries 730 days (2 years) of load curve; client slices to selected range
+- Tick density auto-adjusts: labels every 28 days for 2Y, 14 days for 1Y, 7 days otherwise
+
 #### Performance Metrics
 
 **VO2max estimate (gauge + trend line)**
@@ -846,7 +856,10 @@ Each card has an `ⓘ` tooltip and a sparkline showing the last 8 weeks trend.
 - "+" button on each template card → adds to today or prompts for a date
 
 **Workout Builder:**
-- Accessible from: template library ("New template"), calendar day ("Custom workout"), or editing an existing template
+- Accessible from: template library ("New template"), calendar day ("Custom workout"), editing an existing template, **or editing a future planned workout** (clicking a future workout on the calendar opens the full builder pre-filled with the workout's data)
+- When editing a future planned workout (`plannedWorkoutMode` prop): title changes to "Edit workout", a Delete button with inline confirm is shown in the footer
+- If the planned workout has a linked `templateId`, saving also PATCHes the template (sections, name, sport, etc.)
+- If there is no linked template, a stub `WorkoutTemplate` is synthesized from the `PlannedWorkout` fields so the builder has something to pre-fill from
 - **Fields:** Name, Sport (dropdown from `SportCategory`), Type (dropdown filtered by sport, from `WorkoutType`), Description, Color override
 - **Sections editor** (the core):
   - List of sections, drag-to-reorder
@@ -1592,6 +1605,16 @@ GOOGLE_AI_API_KEY=""
 - `races-client.tsx`: ExternalLink icon added to PB card when `stravaActivityId` is set; auto-link button and per-row unlink button added
 - `docs/fitness/hr_zones_current.md`: moved from `docs/planning/` to `docs/fitness/`
 
+**Session 2026-05-26:**
+- `settings/account-actions.tsx`: new Account section at bottom of settings — Log out + Delete account with two-step confirm
+- `api/settings/account/route.ts`: `DELETE` endpoint — `prisma.user.delete` with cascade
+- `TrainingLoadChart.tsx`: added 3M/6M/1Y/2Y time range selector; data window extended to 730 days
+- `stats/page.tsx`: both fast and slow paths extended to query 730 days of load curve
+- `planner-client.tsx`: `WorkoutBuilder` now used for editing future planned workouts (not just templates); IIFE pattern replaced with `useMemo`
+- `WorkoutBuilder.tsx`: added `plannedWorkoutMode` prop + `onDelete` prop; delete with inline confirm shown in footer
+- `athlete-profile.tsx`: `handleSave` now checks `res.ok` and surfaces error to user instead of always showing "Saved ✓"
+- Logo: T-icon pull-in set to `-(size * 0.20)` for correct letter-gap spacing
+
 ### Documentation Written
 - `docs/api/auth.md` — auth + settings endpoints
 - `docs/api/strava.md` — sync endpoint
@@ -1692,4 +1715,4 @@ Every internal API endpoint and cross-module function that crosses a boundary (H
 
 ---
 
-*Last updated: 2026-05-20*
+*Last updated: 2026-05-26*
