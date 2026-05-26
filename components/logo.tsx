@@ -29,7 +29,7 @@ export function Logo({ size = 32, className }: Props) {
       </defs>
       <path
         d="M2,7 H38 V17 H27 V38 H13 V17 H2 Z"
-        fill="#6EE7B7"
+        className="fill-accent"
         mask="url(#act-cut)"
       />
     </svg>
