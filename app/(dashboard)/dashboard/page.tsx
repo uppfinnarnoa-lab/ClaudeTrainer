@@ -215,7 +215,7 @@ export default async function DashboardPage() {
 
 function ACWRCard({ acwr }: { acwr: number }) {
   const color = acwr > 1.5 ? "#F87171" : acwr > 1.3 ? "#FBBF24" : "#6EE7B7";
-  const label = acwr > 1.5 ? "Skaderisk — ta det lugnt" : acwr > 1.3 ? "Hög belastning — se upp" : acwr >= 0.8 ? "Grön zon — bra balans" : "Låg belastning";
+  const label = acwr > 1.5 ? "Injury risk — ease off" : acwr > 1.3 ? "High load — be careful" : acwr >= 0.8 ? "Green zone — good balance" : "Low load";
   const pct = Math.min(acwr / 2, 1) * 100;
   return (
     <div className="rounded-xl bg-surface border border-border p-4 flex items-center gap-6">
@@ -231,7 +231,7 @@ function ACWRCard({ acwr }: { acwr: number }) {
         <div className="flex justify-between text-[10px] text-muted mt-1 px-0.5">
           <span>0</span><span>0.8</span><span>1.0</span><span>1.3</span><span>1.5</span><span>2.0</span>
         </div>
-        <p className="text-xs text-muted mt-1">Säker zon 0.8–1.3 · Källa: 7-dagars / 28-dagars snittbelastning</p>
+        <p className="text-xs text-muted mt-1">Safe zone 0.8–1.3 · Source: 7-day / 28-day average load</p>
       </div>
     </div>
   );

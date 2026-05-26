@@ -287,7 +287,7 @@ export default async function StatsPage() {
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
   // Skip bestEfforts + splitsMetric — large JSON not needed for stats aggregations
   const activities = await prisma.activity.findMany({
-    where: { userId, startDate: { gte: subDays(now, 5 * 365) } },
+    where: { userId, startDate: { gte: subDays(now, 10 * 365) } },
     orderBy: { startDate: "asc" },
     select: {
       id: true, sportType: true, startDate: true, name: true,

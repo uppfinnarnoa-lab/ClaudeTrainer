@@ -1,10 +1,22 @@
 "use client";
 
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { formatDuration } from "@/lib/utils";
 
 const ZONE_COLORS = ["#94A3B8", "#6EE7B7", "#FBBF24", "#F97316", "#EF4444"];
 const ZONE_LABELS = ["Z1 Recovery", "Z2 Aerobic", "Z3 Tempo", "Z4 Threshold", "Z5 VO2max"];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ZoneTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs shadow-lg space-y-0.5">
+      <p className="font-semibold text-primary">{d.name}</p>
+      <p className="text-muted">{formatDuration(d.value)} · {d.pct}%</p>
+    </div>
+  );
+}
 
 interface Props {
   zoneSeconds: Record<string, number>;
@@ -33,10 +45,7 @@ export function HRZonesChart({ zoneSeconds }: Props) {
           <Pie data={data} dataKey="value" innerRadius={45} outerRadius={72} paddingAngle={2} startAngle={90} endAngle={-270}>
             {data.map((d, i) => <Cell key={i} fill={d.color} />)}
           </Pie>
-          <Tooltip
-            contentStyle={{ backgroundColor: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12, color: "var(--text-primary)" }}
-            formatter={(v: number, name: string) => [formatDuration(v), name]}
-          />
+          <Tooltip content={<ZoneTooltip />} />
         </PieChart>
       </ResponsiveContainer>
 

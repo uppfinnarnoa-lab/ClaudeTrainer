@@ -289,7 +289,7 @@ export function StatsClient(props: Props) {
                     })}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted">Behöver fler lätta löppass med pulsdata</p>
+                  <p className="text-xs text-muted">Needs more easy runs with HR data</p>
                 )}
                 {analytics.aeiByWeek.length >= 2 && (() => {
                   const first = analytics.aeiByWeek[0].aei;
@@ -640,7 +640,7 @@ function ZoneCalibrationButton() {
         lt2HR: data.lt2HR,
       });
     } catch (e) {
-      setError(mode === "ai" ? "AI-kalibrering misslyckades — kontrollera API-nyckeln i Inställningar." : "Kalibrering misslyckades.");
+      setError(mode === "ai" ? "AI calibration failed — check your API key in Settings." : "Calibration failed.");
       console.error(e);
     } finally {
       setLoading(null);
@@ -652,14 +652,14 @@ function ZoneCalibrationButton() {
       <div className="flex gap-2">
         <button onClick={() => calibrate("algorithmic")} disabled={!!loading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border hover:border-accent/40 hover:text-primary text-muted transition disabled:opacity-50"
-          title="Estimera HR-zoner från träningsdata (ingen AI)">
+          title="Estimate HR zones from training data (no AI)">
           {loading === "algo"
-            ? <><Loader2 size={13} className="animate-spin" />Beräknar…</>
-            : <><RefreshCw size={13} />Estimera zoner</>}
+            ? <><Loader2 size={13} className="animate-spin" />Calculating…</>
+            : <><RefreshCw size={13} />Estimate zones</>}
         </button>
         <button onClick={() => calibrate("ai")} disabled={!!loading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-accent/30 bg-accent/5 hover:bg-accent/10 text-accent transition disabled:opacity-50"
-          title="Låt AI analysera dina tävlingstider och hårda pass för att estimera zoner">
+          title="Let AI analyze your race times and hard sessions to estimate zones">
           {loading === "ai"
             ? <><Loader2 size={13} className="animate-spin" />AI analyserar…</>
             : "AI-estimat"}
@@ -668,7 +668,7 @@ function ZoneCalibrationButton() {
       {result && (
         <div className="text-xs text-muted bg-surface-2 rounded-xl px-3 py-2 space-y-1 max-w-sm">
           <p className="font-medium text-primary">
-            {result.aiApplied ? "AI-zoner tillämpade" : "Zoner uppdaterade"} — max HR {result.maxHR} bpm · VO2max {result.vo2max?.toFixed(1)}
+            {result.aiApplied ? "AI zones applied" : "Zones updated"} — max HR {result.maxHR} bpm · VO2max {result.vo2max?.toFixed(1)}
             <a href="/stats" className="ml-2 text-accent hover:underline font-normal">ladda om sidan</a>
           </p>
           <p>
@@ -761,7 +761,7 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manu
           <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT1 — Aerobic Threshold</p>
           <p className="font-mono font-semibold text-primary">{ltBounds.lt1} bpm</p>
           <p className="text-xs text-muted mt-0.5">Training range: <span className="font-mono text-accent">{ltBounds.atTrainingRange[0]}–{ltBounds.atTrainingRange[1]} bpm</span></p>
-          <p className="text-xs text-muted mt-0.5">Long runs, distanspass, maratontempos — håll under för lätta pass</p>
+          <p className="text-xs text-muted mt-0.5">Long runs, marathon tempos — stay below this for easy sessions</p>
         </div>
         <div>
           <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1.5">LT2 — Lactate Threshold</p>
@@ -773,17 +773,17 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manu
 
       {/* Parallel LT1 estimates — model comparison */}
       <div className="border-t border-border px-4 py-3">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">LT1 — parallella estimat</p>
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">LT1 — parallel estimates</p>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted">HR-pace regression (aktiv)</span>
+            <span className="text-xs text-muted">HR-pace regression (active)</span>
             <span className="font-mono text-sm font-semibold text-primary">{ltBounds.lt1} bpm</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted">
-              Aerob decoupling
+              Aerobic decoupling
               {decouplingLt1HR === null && (
-                <span className="ml-1 text-[10px] text-warning">(kräver backfill)</span>
+                <span className="ml-1 text-[10px] text-warning">(requires backfill)</span>
               )}
             </span>
             <span className={`font-mono text-sm font-semibold ${decouplingLt1HR !== null ? "text-primary" : "text-muted"}`}>
@@ -792,13 +792,13 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manu
           </div>
           {decouplingLt1HR != null && (
             <p className="text-[10px] text-muted pt-0.5">
-              Differens: {decouplingLt1HR - ltBounds.lt1 > 0 ? "+" : ""}{decouplingLt1HR - ltBounds.lt1} bpm
+              Difference: {decouplingLt1HR - ltBounds.lt1 > 0 ? "+" : ""}{decouplingLt1HR - ltBounds.lt1} bpm
               {" · "}
               {Math.abs(decouplingLt1HR - ltBounds.lt1) <= 3
-                ? "Metoderna är i god överensstämmelse."
+                ? "Methods agree well."
                 : Math.abs(decouplingLt1HR - ltBounds.lt1) <= 7
-                ? "Liten avvikelse — mer data ger bättre samstämmighet."
-                : "Stor avvikelse — kör backfill för mer träningsdata."}
+                ? "Small divergence — more data will improve agreement."
+                : "Large divergence — run backfill for more training data."}
             </p>
           )}
         </div>
@@ -806,17 +806,17 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manu
 
       {/* Parallel LT2 estimates */}
       <div className="border-t border-border px-4 py-3">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">LT2 — parallella estimat</p>
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">LT2 — parallel estimates</p>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted">HR-pace regression (aktiv)</span>
+            <span className="text-xs text-muted">HR-pace regression (active)</span>
             <span className="font-mono text-sm font-semibold text-primary">{ltBounds.lt2} bpm</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted">
               Critical Speed
               {criticalSpeedMs == null && (
-                <span className="ml-1 text-[10px] text-warning">(kräver best efforts via backfill)</span>
+                <span className="ml-1 text-[10px] text-warning">(requires best efforts via backfill)</span>
               )}
             </span>
             <span className={`font-mono text-sm font-semibold ${criticalSpeedMs != null ? "text-primary" : "text-muted"}`}>
@@ -908,38 +908,38 @@ function PolarisationCard({ pol, zoneSeconds }: {
 
 function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult }) {
   const confColor = sz.rSquared >= 0.90 ? "#6EE7B7" : sz.rSquared >= 0.80 ? "#FBBF24" : "#F87171";
-  const confLabel = sz.rSquared >= 0.90 ? "Hög" : sz.rSquared >= 0.80 ? "Medium" : "Låg";
+  const confLabel = sz.rSquared >= 0.90 ? "High" : sz.rSquared >= 0.80 ? "Medium" : "Low";
   return (
     <div className="rounded-xl border border-border overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between">
         <div>
           <p className="text-sm font-semibold text-primary">Statistisk zonanalys — HR vs tempo</p>
-          <p className="text-xs text-muted mt-0.5">{sz.bucketCount} tempogrupper analyserade · piecewise regression</p>
+          <p className="text-xs text-muted mt-0.5">{sz.bucketCount} pace buckets · piecewise regression</p>
         </div>
         <span className="text-xs font-semibold font-mono" style={{ color: confColor }}>
-          R² {sz.rSquared.toFixed(2)} · {confLabel} konfidens
+          R² {sz.rSquared.toFixed(2)} · {confLabel} confidence
         </span>
       </div>
       <div className="p-4 grid grid-cols-2 gap-4">
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT1 — Aerob tröskel</p>
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT1 — Aerobic Threshold</p>
           <p className="text-2xl font-semibold font-mono text-primary">{sz.lt1HR} <span className="text-sm text-muted font-normal">bpm</span></p>
-          <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)}/km (GAP)</p>
-          <p className="text-xs text-muted">Z2/Z3-gräns — lätta pass hålls under denna gräns</p>
+          <p className="text-xs text-muted">Pace: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)}/km (GAP)</p>
+          <p className="text-xs text-muted">Z2/Z3 boundary — easy sessions stay below this</p>
         </div>
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT2 — Laktattröskel</p>
+          <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT2 — Lactate Threshold</p>
           <p className="text-2xl font-semibold font-mono text-primary">{sz.lt2HR} <span className="text-sm text-muted font-normal">bpm</span></p>
-          <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt2PaceSecPerKm)}/km (GAP)</p>
-          <p className="text-xs text-muted">Z3/Z4-gräns — tröskelträningsnivå</p>
+          <p className="text-xs text-muted">Pace: {secPerKmToPaceStr(sz.lt2PaceSecPerKm)}/km (GAP)</p>
+          <p className="text-xs text-muted">Z3/Z4 boundary — threshold training level</p>
         </div>
       </div>
       <div className="border-t border-border px-4 py-3 bg-surface-2">
         <p className="text-xs text-muted">
-          Estimerat från dina {sz.bucketCount} tempogrupper med minst 10 pass var.
-          Zonbredderna är ojämna — Z3 = LT1→LT2 ({sz.lt2HR - sz.lt1HR} bpm),
-          Z2 smal ({Math.round((sz.lt2HR - sz.lt1HR) * 0.12)} bpm).
-          Använd "AI-estimat" för att tillämpa dessa zoner.
+          Estimated from {sz.bucketCount} pace buckets with at least 10 sessions each.
+          Zone widths are unequal — Z3 = LT1→LT2 ({sz.lt2HR - sz.lt1HR} bpm),
+          Z2 narrow ({Math.round((sz.lt2HR - sz.lt1HR) * 0.12)} bpm).
+          Use "AI estimate" to apply these zones.
         </p>
       </div>
     </div>

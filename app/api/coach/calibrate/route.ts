@@ -75,6 +75,10 @@ export async function POST(req: Request) {
       zones: cache.zones, paces: cache.paces,
       computedAt: cache.computedAt,
       aiInsights: "Ingen API-nyckel konfigurerad — algoritmisk estimering användes.",
+      rSquared: result.rSquared ?? null,
+      zonesMethod: result.zonesMethod,
+      lt1HR: result.lt1HR,
+      lt2HR: result.lt2HR,
     });
   }
 
@@ -209,5 +213,9 @@ Din JSON med rätt värden:`;
     hrZones: { z1: hrZones.z1, z2: hrZones.z2, z3: hrZones.z3, z4: hrZones.z4, z5: hrZones.z5 },
     aiInsights,
     aiApplied: aiJson !== null,
+    rSquared: result.rSquared ?? null,
+    zonesMethod: result.zonesMethod,
+    lt1HR: result.lt1HR,
+    lt2HR: result.lt2HR,
   });
 }

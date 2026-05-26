@@ -48,7 +48,7 @@ export function SyncButton({ lastSyncAt }: Props) {
       <button
         onClick={handleSync}
         disabled={loading}
-        title="Hämtar senaste 3 dagarna och uppdaterar beskrivningar"
+        title="Fetches the last 3 days and updates activity descriptions"
         className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-medium text-muted hover:text-primary hover:border-accent/40 transition disabled:opacity-50"
       >
         {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}

@@ -3,14 +3,24 @@
 import { useState, useMemo } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine,
+  Tooltip, ResponsiveContainer,
 } from "recharts";
 import { format, parseISO } from "date-fns";
+import { cn } from "@/lib/utils";
 import type { EasyPacePoint } from "@/app/(dashboard)/stats/page";
 
 interface Props {
   data: EasyPacePoint[];
 }
+
+type Range = "1y" | "2y" | "5y" | "10y" | "all";
+const RANGES: { value: Range; label: string; months: number | null }[] = [
+  { value: "1y",  label: "1Y",  months: 12 },
+  { value: "2y",  label: "2Y",  months: 24 },
+  { value: "5y",  label: "5Y",  months: 60 },
+  { value: "10y", label: "10Y", months: 120 },
+  { value: "all", label: "All", months: null },
+];
 
 function formatPace(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -28,10 +38,9 @@ function linearRegression(points: { x: number; y: number }[]) {
   if (den === 0) return null;
   const b = num / den;
   const a = my - b * mx;
-  return { a, b }; // y = a + b*x
+  return { a, b };
 }
 
-// Group monthly data into quarters
 function toQuarterly(data: EasyPacePoint[]): EasyPacePoint[] {
   const byQ = new Map<string, number[]>();
   const byQHR = new Map<string, number[]>();
@@ -70,20 +79,37 @@ function CustomTooltip({ active, payload, label }: any) {
   return (
     <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs shadow-lg space-y-0.5">
       <p className="font-semibold text-primary">{label}</p>
-      <p className="text-accent">Tempo: {formatPace(d.medianGap)}/km (GAP)</p>
-      <p className="text-muted">Snitt HR: {d.avgHR} bpm</p>
-      <p className="text-muted">{d.count} pass</p>
+      <p className="text-accent">Pace: {formatPace(d.medianGap)}/km (GAP)</p>
+      <p className="text-muted">Avg HR: {d.avgHR} bpm</p>
+      <p className="text-muted">{d.count} sessions</p>
     </div>
   );
 }
 
 export function EasyPaceTrendChart({ data }: Props) {
-  const autoQuarterly = data.length > 18;
-  const [quarterly, setQuarterly] = useState(autoQuarterly);
+  const [range, setRange] = useState<Range>("all");
+  const [quarterlyOverride, setQuarterlyOverride] = useState<boolean | null>(null);
+
+  const rangeFiltered = useMemo(() => {
+    const r = RANGES.find(x => x.value === range);
+    if (!r?.months) return data;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - r.months);
+    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}`;
+    return data.filter(d => d.month >= cutoffStr);
+  }, [data, range]);
+
+  const autoQuarterly = rangeFiltered.length > 18;
+  const quarterly = quarterlyOverride ?? autoQuarterly;
+
+  function handleSetRange(r: Range) {
+    setRange(r);
+    setQuarterlyOverride(null); // reset to auto on range change
+  }
 
   const display = useMemo(() =>
-    quarterly ? toQuarterly(data) : data,
-    [data, quarterly]
+    quarterly ? toQuarterly(rangeFiltered) : rangeFiltered,
+    [rangeFiltered, quarterly]
   );
 
   const reg = useMemo(() => {
@@ -102,83 +128,117 @@ export function EasyPaceTrendChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <p className="text-xs text-muted py-4 text-center">
-        Ingen data — kräver löppass med HR under LT1, ≥ 6 km, ≥ 3 pass per period.
+        No data — requires runs with HR below LT1, ≥ 6 km, ≥ 3 sessions per period.
       </p>
     );
   }
 
-  // Y-axis domain: add 10 sec/km padding, reversed (faster = higher)
   const allGaps = display.map(d => d.medianGap);
   const minGap = Math.min(...allGaps) - 10;
   const maxGap = Math.max(...allGaps) + 10;
+  const improving = reg ? reg.b < 0 : false;
 
-  const improving = reg ? reg.b < 0 : false; // negative slope = faster over time
+  // Only show range options that have data
+  const availableRanges = RANGES.filter(r => {
+    if (!r.months) return true;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - r.months);
+    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}`;
+    return data.some(d => d.month <= cutoffStr);
+  });
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      {/* Controls row */}
+      <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
-          {reg && (
+          {reg && display.length >= 2 && (
             <p className={`text-xs font-medium ${improving ? "text-accent" : "text-orange-400"}`}>
               {improving
-                ? `Trend: +${formatPace(Math.abs(Math.round(reg.b * display.length)))}/km snabbare över perioden`
-                : `Trend: ${formatPace(Math.round(Math.abs(reg.b * display.length)))}/km långsammare över perioden`}
+                ? `Trend: +${formatPace(Math.abs(Math.round(reg.b * display.length)))}/km faster over the period`
+                : `Trend: ${formatPace(Math.round(Math.abs(reg.b * display.length)))}/km slower over the period`}
             </p>
           )}
-          <p className="text-[10px] text-muted mt-0.5">GAP-justerat tempo · lägre sekunder = snabbare</p>
+          <p className="text-[10px] text-muted mt-0.5">GAP-adjusted pace · lower seconds = faster</p>
         </div>
-        {data.length > 6 && (
-          <button
-            onClick={() => setQuarterly(q => !q)}
-            className="text-[10px] px-2 py-1 rounded border border-border text-muted hover:text-primary transition-colors"
-          >
-            {quarterly ? "Månadsvis" : "Kvartalsvis"}
-          </button>
-        )}
+
+        <div className="flex items-center gap-1.5">
+          {/* Range selector */}
+          <div className="flex gap-0.5 rounded-lg border border-border p-0.5">
+            {availableRanges.map(r => (
+              <button
+                key={r.value}
+                onClick={() => handleSetRange(r.value)}
+                className={cn(
+                  "text-[10px] px-2 py-0.5 rounded transition-colors",
+                  range === r.value ? "bg-accent/15 text-accent" : "text-muted hover:text-primary"
+                )}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Quarterly toggle */}
+          {rangeFiltered.length > 6 && (
+            <button
+              onClick={() => setQuarterlyOverride(q => q === null ? !autoQuarterly : !q)}
+              className="text-[10px] px-2 py-1 rounded border border-border text-muted hover:text-primary transition-colors"
+            >
+              {quarterly ? "Monthly" : "Quarterly"}
+            </button>
+          )}
+        </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={withTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-          <XAxis
-            dataKey="month"
-            tick={{ fontSize: 10, fill: "var(--muted)" }}
-            tickFormatter={v => {
-              if (quarterly) return v; // "2024-Q2"
-              try { return format(parseISO(v + "-01"), "MMM yy"); } catch { return v; }
-            }}
-            interval="preserveStartEnd"
-          />
-          <YAxis
-            domain={[minGap, maxGap]}
-            reversed
-            tick={{ fontSize: 10, fill: "var(--muted)" }}
-            tickFormatter={v => formatPace(v)}
-            width={42}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          <Line
-            type="monotone"
-            dataKey="medianGap"
-            stroke="var(--accent)"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "var(--accent)" }}
-            activeDot={{ r: 5 }}
-            name="Tempo"
-          />
-          {reg && (
-            <Line
-              type="linear"
-              dataKey="trendGap"
-              stroke="var(--muted)"
-              strokeWidth={1.5}
-              strokeDasharray="5 3"
-              dot={false}
-              name="Trend"
+      {rangeFiltered.length < 3 ? (
+        <p className="text-xs text-muted py-4 text-center">
+          Not enough data for the selected time range.
+        </p>
+      ) : (
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={withTrend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+            <XAxis
+              dataKey="month"
+              tick={{ fontSize: 10, fill: "var(--muted)" }}
+              tickFormatter={v => {
+                if (quarterly) return v;
+                try { return format(parseISO(v + "-01"), "MMM yy"); } catch { return v; }
+              }}
+              interval="preserveStartEnd"
             />
-          )}
-        </LineChart>
-      </ResponsiveContainer>
+            <YAxis
+              domain={[minGap, maxGap]}
+              reversed
+              tick={{ fontSize: 10, fill: "var(--muted)" }}
+              tickFormatter={v => formatPace(v)}
+              width={42}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Line
+              type="monotone"
+              dataKey="medianGap"
+              stroke="var(--accent)"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "var(--accent)" }}
+              activeDot={{ r: 5 }}
+              name="Tempo"
+            />
+            {reg && (
+              <Line
+                type="linear"
+                dataKey="trendGap"
+                stroke="var(--muted)"
+                strokeWidth={1.5}
+                strokeDasharray="5 3"
+                dot={false}
+                name="Trend"
+              />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }
