@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { StatsClient } from "./stats-client";
+import { StatsErrorBoundary } from "./stats-error-boundary";
 import { buildHRZones, buildPaceZones, buildPaceZonesFromLT, estimateLTFromRaces, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis, type HRZones } from "@/lib/fitness/zones";
 import { computeTSS, buildLoadCurve, computeACWR } from "@/lib/fitness/training-load";
 import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace } from "@/lib/fitness/vo2max";
@@ -736,6 +737,7 @@ function renderStats(
         <h1 className="text-2xl font-semibold text-primary">Statistics</h1>
         <p className="text-sm text-muted mt-1">{totalCount.toLocaleString()} activities total</p>
       </div>
+      <StatsErrorBoundary>
       <StatsClient
         overview={overview}
         sparklines={sparklines}
@@ -762,6 +764,7 @@ function renderStats(
         manualMaxHR={manualMaxHR ?? null}
         manualRestHR={manualRestHR ?? null}
       />
+      </StatsErrorBoundary>
     </div>
   );
 }
