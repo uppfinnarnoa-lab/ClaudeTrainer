@@ -148,7 +148,8 @@ export default async function StatsPage() {
       terrainFactor: { olPaceSecPerKm: number; roadPaceSecPerKm: number; olSessions: number; roadSessions: number } | null;
       perfByDistYear: { distance: string; period: string; time: number }[];
     } | null;
-    const fastStatZones = (fitnessCache.statZonesJson ?? null) as import("@/lib/fitness/zones").StatisticalZoneResult | null;
+    const fastStatZones     = (fitnessCache.statZonesJson     ?? null) as import("@/lib/fitness/zones").StatisticalZoneResult | null;
+    const fastStatZonesLaps = (fitnessCache.statZonesLapsJson ?? null) as import("@/lib/fitness/zones").StatisticalZoneResult | null;
 
     // Build sparklines from cached weekly volumes
     const sparklines = Array.from({ length: 8 }, (_, i) => {
@@ -291,7 +292,7 @@ export default async function StatsPage() {
       fastStatZones, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, extraViz,
       fitnessCache.decouplingLt1HR ?? null, fitnessCache.criticalSpeedMs ?? null,
       profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
-      fpEasyPaceTrend);
+      fpEasyPaceTrend, fastStatZonesLaps);
   }
 
   // ── SLOW PATH: full computation (cache miss or stale) ───────────────────
@@ -704,6 +705,8 @@ export default async function StatsPage() {
   type SlowLapRow = { average_heartrate?: number; distance: number; moving_time: number; total_elevation_gain?: number };
   type SlowAct = A & { laps?: unknown };
   const olRaceFilterSlow = (a: A) =>
+    !/virtualrun/i.test(a.sportType) &&
+    !/indoor|inomhus/i.test(a.name ?? "") &&
     !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
     (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 330));
   const statActRuns = (activities as SlowAct[])
@@ -724,6 +727,10 @@ export default async function StatsPage() {
     [...statActRuns, ...statLapRuns],
     computedMaxHR, restHR,
   );
+  const statZonesLaps = estimateZonesFromStatisticalAnalysis(
+    statLapRuns,
+    computedMaxHR, restHR,
+  );
 
   const easyPaceTrend = computeEasyPaceTrend(activities as EasyPaceAct[], computedHrZones.z3[0]);
 
@@ -731,8 +738,9 @@ export default async function StatsPage() {
   prisma.fitnessCache.update({
     where: { userId },
     data: {
-      extraVizJson: { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor: terrainFactor ?? null, perfByDistYear } as Prisma.InputJsonValue,
-      statZonesJson: (statZones ?? null) as unknown as Prisma.InputJsonValue,
+      extraVizJson:     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor: terrainFactor ?? null, perfByDistYear } as Prisma.InputJsonValue,
+      statZonesJson:    (statZones     ?? null) as unknown as Prisma.InputJsonValue,
+      statZonesLapsJson:(statZonesLaps ?? null) as unknown as Prisma.InputJsonValue,
     },
   }).catch((e: unknown) => console.error("[stats] extraViz cache save failed:", e));
 
@@ -743,7 +751,7 @@ export default async function StatsPage() {
     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear },
     fitnessCache?.decouplingLt1HR ?? null, fitnessCache?.criticalSpeedMs ?? null,
     profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
-    easyPaceTrend);
+    easyPaceTrend, statZonesLaps);
 }
 
 // Shared render — used by both fast and slow paths
@@ -792,6 +800,7 @@ function renderStats(
   manualRestHR?: number | null,
   weatherStats?: WeatherStats,
   easyPaceTrend?: EasyPacePoint[],
+  statZonesLaps?: import("@/lib/fitness/zones").StatisticalZoneResult | null,
 ) {
   return (
     <div className="space-y-2">
@@ -827,6 +836,7 @@ function renderStats(
         manualRestHR={manualRestHR ?? null}
         weatherStats={weatherStats ?? null}
         easyPaceTrend={easyPaceTrend ?? []}
+        statZonesLaps={statZonesLaps ?? null}
       />
       </StatsErrorBoundary>
     </div>

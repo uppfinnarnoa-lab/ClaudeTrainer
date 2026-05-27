@@ -299,7 +299,9 @@ export async function updateVO2maxAndPaces(userId: string) {
     };
   })();
 
-  const olRaceFilter = (a: { name: string; isRace: boolean; averageSpeed: number | null }) =>
+  const olRaceFilter = (a: { name: string; isRace: boolean; averageSpeed: number | null; sportType: string }) =>
+    !/virtualrun/i.test(a.sportType) &&
+    !/indoor|inomhus/i.test(a.name ?? "") &&
     !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
     (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 330));
 
@@ -325,6 +327,11 @@ export async function updateVO2maxAndPaces(userId: string) {
     maxHR, restHR,
   );
 
+  const statZonesLapsResult = estimateZonesFromStatisticalAnalysis(
+    statLapRuns,
+    maxHR, restHR,
+  );
+
   const extraVizJson = { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor: terrainFactor ?? null, perfByDistYear: [] };
 
   // ── Persist to cache ───────────────────────────────────────────────────
@@ -347,8 +354,9 @@ export async function updateVO2maxAndPaces(userId: string) {
     decouplingRunsUsed: decouplingResult?.runsUsed ?? undefined,
     criticalSpeedMs:   csResult?.csMetersPerSec   ?? undefined,
     wPrimeMeters:      csResult?.wPrimeMeters      ?? undefined,
-    extraVizJson:   extraVizJson as object,
-    statZonesJson:  (statZonesResult ?? null) as object | null,
+    extraVizJson:       extraVizJson as object,
+    statZonesJson:      (statZonesResult     ?? null) as object | null,
+    statZonesLapsJson:  (statZonesLapsResult ?? null) as object | null,
   };
 
   await prisma.fitnessCache.upsert({
@@ -459,6 +467,8 @@ export async function updateHRZones(userId: string) {
     .filter(a =>
       a.averageHeartrate &&
       /run|trail/i.test(a.sportType) &&
+      !/virtualrun/i.test(a.sportType) &&
+      !/indoor|inomhus/i.test(a.name ?? "") &&
       a.distance >= 4000 && a.movingTime >= 900 &&
       !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
       (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 330))
