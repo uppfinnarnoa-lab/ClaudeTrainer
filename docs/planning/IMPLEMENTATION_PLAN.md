@@ -1373,22 +1373,22 @@ traininglab/
 
 ## 9. Deployment (Ubuntu + Apache + helgars.se)
 
-**Target setup:** Ubuntu server (SSH-only), dynamic IP managed by FortDDNS, subdomain `training.helgars.se`, HTTPS via Let's Encrypt.
+**Target setup:** Ubuntu server (SSH-only), existing Apache server with `theodal.helgars.se` already running. Wildcard cert `*.helgars.se` (Let's Encrypt) already in place. DNS A record for `training.helgars.se` and port forwarding already configured. Just add a new VirtualHost using the existing cert.
 
 ---
 
-### Step 1 — DNS & Port Forwarding
+### Step 1 — Find the Existing Cert Path
 
-1. **helgars.se DNS:** Add an A record `training.helgars.se → <your current home IP>` at your DNS provider.
-2. **FortDDNS:** Configure FortDDNS to keep that A record updated when your IP changes. Install ddclient on the Ubuntu server to push updates automatically:
-   ```bash
-   sudo apt install -y ddclient
-   ```
-   Edit `/etc/ddclient.conf` with your FortDDNS credentials and host `training.helgars.se`. Then:
-   ```bash
-   sudo systemctl enable ddclient && sudo systemctl start ddclient
-   ```
-3. **Router port forwarding:** Forward TCP ports **80** and **443** on your router to the Ubuntu server's local IP. Port 80 is required for Let's Encrypt HTTP-01 challenge.
+Check the existing `theodal.helgars.se` Apache config to find the exact cert file paths:
+```bash
+grep -r "SSLCertificateFile" /etc/apache2/sites-enabled/
+```
+The wildcard cert `*.helgars.se` covers `training.helgars.se` — no new cert needed. The path will look like:
+```
+/etc/letsencrypt/live/helgars.se/fullchain.pem
+/etc/letsencrypt/live/helgars.se/privkey.pem
+```
+(or possibly `theodal.helgars.se` as the folder name — use whatever the grep shows)
 
 ---
 
@@ -1402,14 +1402,13 @@ sudo apt install -y nodejs
 # pnpm and PM2 globally
 sudo npm install -g pnpm pm2
 
-# Apache, Certbot, PostgreSQL
-sudo apt install -y apache2 certbot python3-certbot-apache \
-                    postgresql postgresql-contrib
+# PostgreSQL (if not already installed)
+sudo apt install -y postgresql postgresql-contrib
 ```
 
-Enable required Apache modules:
+Ensure required Apache modules are enabled (likely already on since theodal works):
 ```bash
-sudo a2enmod proxy proxy_http proxy_http2 ssl headers rewrite
+sudo a2enmod proxy proxy_http ssl headers
 sudo systemctl restart apache2
 ```
 
@@ -1436,7 +1435,7 @@ sudo chown $USER:$USER /var/www/traininglab
 git clone https://github.com/YOUR_REPO /var/www/traininglab
 cd /var/www/traininglab
 
-# Install dependencies and build
+# Install dependencies
 pnpm install --frozen-lockfile
 ```
 
@@ -1459,7 +1458,7 @@ ANTHROPIC_API_KEY=""
 GOOGLE_AI_API_KEY=""
 ```
 
-Then apply migrations and build:
+Apply migrations and build:
 ```bash
 pnpm exec prisma migrate deploy
 pnpm exec prisma db seed            # creates admin user
@@ -1489,81 +1488,52 @@ module.exports = {
 ```bash
 pm2 start ecosystem.config.js
 pm2 save
-pm2 startup   # follow the printed command to enable auto-start on boot
+pm2 startup   # follow the printed sudo command it outputs
 ```
 
 ---
 
-### Step 6 — Apache Virtual Host (HTTP only first)
+### Step 6 — Apache Virtual Host
 
-Create `/etc/apache2/sites-available/traininglab.conf`:
-```apache
-<VirtualHost *:80>
-  ServerName training.helgars.se
-  # Certbot will add HTTPS redirect here automatically
-</VirtualHost>
-```
-
-```bash
-sudo a2ensite traininglab
-sudo systemctl reload apache2
-```
-
----
-
-### Step 7 — Let's Encrypt Certificate
-
-```bash
-sudo certbot --apache -d training.helgars.se
-```
-
-Certbot rewrites the Apache config to add port 443 and the HTTP→HTTPS redirect automatically. The certificate auto-renews via the certbot systemd timer (`systemctl status certbot.timer`).
-
----
-
-### Step 8 — Apache Virtual Host (final, after Certbot)
-
-Certbot modifies the config. Then **add the proxy and SSE settings** to the 443 block. Edit `/etc/apache2/sites-available/traininglab-le-ssl.conf` (or wherever certbot put it):
+Create `/etc/apache2/sites-available/traininglab.conf`.
+Replace the cert paths with whatever Step 1 showed:
 
 ```apache
 <VirtualHost *:443>
   ServerName training.helgars.se
 
   SSLEngine on
-  SSLCertificateFile    /etc/letsencrypt/live/training.helgars.se/fullchain.pem
-  SSLCertificateKeyFile /etc/letsencrypt/live/training.helgars.se/privkey.pem
+  # Use the existing wildcard *.helgars.se cert (same as theodal.helgars.se)
+  SSLCertificateFile    /etc/letsencrypt/live/helgars.se/fullchain.pem
+  SSLCertificateKeyFile /etc/letsencrypt/live/helgars.se/privkey.pem
 
   # Required for SSE streaming (AI chat, backfill progress)
   SetEnv proxy-sendchunked 1
 
   # SSE endpoints — must be listed BEFORE the catch-all ProxyPass
-  ProxyPass        /api/coach/chat                    http://localhost:3000/api/coach/chat
-  ProxyPassReverse /api/coach/chat                    http://localhost:3000/api/coach/chat
-  ProxyPass        /api/strava/backfill-history       http://localhost:3000/api/strava/backfill-history
-  ProxyPassReverse /api/strava/backfill-history       http://localhost:3000/api/strava/backfill-history
-  ProxyPass        /api/strava/backfill-weather       http://localhost:3000/api/strava/backfill-weather
-  ProxyPassReverse /api/strava/backfill-weather       http://localhost:3000/api/strava/backfill-weather
+  ProxyPass        /api/coach/chat              http://localhost:3000/api/coach/chat
+  ProxyPassReverse /api/coach/chat              http://localhost:3000/api/coach/chat
+  ProxyPass        /api/strava/backfill-history http://localhost:3000/api/strava/backfill-history
+  ProxyPassReverse /api/strava/backfill-history http://localhost:3000/api/strava/backfill-history
+  ProxyPass        /api/strava/backfill-weather http://localhost:3000/api/strava/backfill-weather
+  ProxyPassReverse /api/strava/backfill-weather http://localhost:3000/api/strava/backfill-weather
 
   # Catch-all
   ProxyPreserveHost On
   ProxyPass        / http://localhost:3000/
   ProxyPassReverse / http://localhost:3000/
 </VirtualHost>
-
-<VirtualHost *:80>
-  ServerName training.helgars.se
-  RewriteEngine on
-  RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]
-</VirtualHost>
 ```
 
 ```bash
+sudo a2ensite traininglab
+sudo apache2ctl configtest        # must say "Syntax OK"
 sudo systemctl reload apache2
 ```
 
 ---
 
-### Step 9 — Strava OAuth Update
+### Step 7 — Strava OAuth Update
 
 1. Go to [strava.com/settings/api](https://www.strava.com/settings/api)
 2. Set **Authorization Callback Domain** to: `training.helgars.se`
@@ -1571,18 +1541,17 @@ sudo systemctl reload apache2
 
 ---
 
-### Step 10 — Post-Deploy Checklist
+### Step 8 — Post-Deploy Checklist
 
 ```
-[ ] Visit https://training.helgars.se — no browser warnings (padlock green)
-[ ] Log in as admin user
+[ ] Visit https://training.helgars.se — padlock green, no browser warning
+[ ] Log in as admin user (seeded by prisma db seed)
 [ ] Settings → enter Strava Client ID + Secret → Save
 [ ] Settings → Connect with Strava → authorize
 [ ] Settings → Sync new activities → confirm count
-[ ] Settings → Backfill all historical activities (runs until Strava daily limit, auto-resumes nightly at 00:30 UTC)
+[ ] Settings → Backfill all historical activities (auto-resumes nightly at 00:30 UTC)
 [ ] Settings → Backfill weather data
 [ ] Stats page loads with real data
-[ ] ddclient updating DNS: sudo ddclient -query (check IP matches)
 [ ] PM2 survives reboot: sudo reboot, then pm2 list
 ```
 
@@ -1596,8 +1565,7 @@ sudo systemctl reload apache2
 | Restart app | `pm2 restart traininglab` |
 | Deploy update | `git pull && pnpm install && pnpm build && pm2 restart traininglab` |
 | Run DB migrations | `pnpm exec prisma migrate deploy` |
-| Check cert renewal | `sudo certbot renew --dry-run` |
-| Check DDNS status | `sudo systemctl status ddclient` |
+| Check cert (auto-renews) | `sudo certbot renew --dry-run` |
 
 ---
 
