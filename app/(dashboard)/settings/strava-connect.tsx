@@ -18,6 +18,7 @@ interface Props {
   isAdmin:      boolean;
   syncMode:              "manual" | "webhook" | "cron";
   webhookSubscriptionId: number | null;
+  webhookUrl:            string;
 }
 
 interface BackfillJobState {
@@ -38,7 +39,7 @@ function formatWait(ms: number): string {
 
 export function StravaConnectSection({
   connected, authUrl, callbackUrl, lastSyncAt, totalSynced, hasClientId, hasClientSecret, isAdmin,
-  syncMode: initialSyncMode, webhookSubscriptionId,
+  syncMode: initialSyncMode, webhookSubscriptionId, webhookUrl,
 }: Props) {
   const [clientId,     setClientId]     = useState("");
   const [clientSecret, setClientSecret] = useState("");
@@ -223,11 +224,10 @@ export function StravaConnectSection({
   async function handleRegisterWebhook() {
     setWebhookLoading(true);
     setWebhookError(null);
-    const origin = new URL(callbackUrl).origin;
     const res = await fetch("/api/strava/webhook-subscription", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ callbackUrl: `${origin}/api/strava/webhook` }),
+      body:    JSON.stringify({ callbackUrl: webhookUrl }),
     }).catch(() => null);
     setWebhookLoading(false);
     if (!res?.ok) {
@@ -571,7 +571,7 @@ export function StravaConnectSection({
                     <p className="text-xs text-muted">
                       Webhook URL:{" "}
                       <code className="bg-surface px-1 rounded text-primary text-[10px]">
-                        {new URL(callbackUrl).origin}/api/strava/webhook
+                        {webhookUrl}
                       </code>
                     </p>
                   </div>
@@ -585,7 +585,7 @@ export function StravaConnectSection({
                       Set <code className="bg-surface px-1 rounded">CRON_SECRET</code> in <code className="bg-surface px-1 rounded">.env.local</code> first.
                     </p>
                     <code className="block text-[10px] bg-surface border border-border rounded-lg px-3 py-2 text-primary font-mono break-all leading-relaxed">
-                      {`0 0 * * * curl -s -X POST ${new URL(callbackUrl).origin}/api/cron/sync -H "Authorization: Bearer $CRON_SECRET"`}
+                      {`0 0 * * * curl -s -X POST ${webhookUrl.replace("/api/strava/webhook", "/api/cron/sync")} -H "Authorization: Bearer $CRON_SECRET"`}
                     </code>
                   </div>
                 )}

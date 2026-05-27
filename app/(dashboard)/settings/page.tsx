@@ -21,6 +21,9 @@ export default async function SettingsPage() {
   const proto        = headersList.get("x-forwarded-proto") ?? "http";
   const origin       = process.env.NEXTAUTH_URL ?? `${proto}://${host}`;
   const stravaCallback = `${origin}/api/strava/callback`;
+  // Webhook must always point to the public domain (training.helgars.se), never localhost
+  const webhookBaseUrl = (process.env.NEXTAUTH_URL ?? origin).replace(/\/$/, "");
+  const stravaWebhookUrl = `${webhookBaseUrl}/api/strava/webhook`;
   const garminCallback = `${origin}/api/garmin/callback`;
 
   const [stravaAccount, garminAccount, aiSettings, user, athleteProfile, appConfig] =
@@ -73,6 +76,7 @@ export default async function SettingsPage() {
           isAdmin={isAdmin}
           syncMode={(appConfig?.stravaAutoSyncMode ?? "manual") as "manual" | "webhook" | "cron"}
           webhookSubscriptionId={appConfig?.stravaWebhookSubscriptionId ?? null}
+          webhookUrl={stravaWebhookUrl}
         />
       </IntegrationCard>
 
