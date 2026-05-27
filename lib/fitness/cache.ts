@@ -302,7 +302,7 @@ export async function updateVO2maxAndPaces(userId: string) {
     (activities as Act[]).filter(a =>
       /run|trail/i.test(a.sportType) &&
       a.averageHeartrate &&
-      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer/i.test(a.name ?? "") &&
+      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
       (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 255))
     ).map(a => ({
       avgHR: a.averageHeartrate!,
@@ -449,7 +449,7 @@ export async function updateHRZones(userId: string) {
       a.averageHeartrate &&
       /run|trail/i.test(a.sportType) &&
       a.distance >= 4000 && a.movingTime >= 900 &&
-      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer/i.test(a.name ?? "") &&
+      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
       (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 255))
     )
     .map(a => ({

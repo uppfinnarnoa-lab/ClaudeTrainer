@@ -705,7 +705,7 @@ export default async function StatsPage() {
     activities.filter((a: A) =>
       /run|trail/i.test(a.sportType) &&
       a.averageHeartrate &&
-      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer/i.test(a.name ?? "") &&
+      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
       (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 255))
     ).map((a: A) => ({
       avgHR: a.averageHeartrate!,

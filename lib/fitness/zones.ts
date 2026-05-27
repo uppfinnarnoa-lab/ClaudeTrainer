@@ -337,7 +337,7 @@ export function estimateZonesFromStatisticalAnalysis(
 ): StatisticalZoneResult | null {
   // ── 1. Filter and compute GAP ──────────────────────────────────────────
   const MIN_DIST = 4000;
-  const MIN_DURATION_SEC = 900; // 15 min
+  const MIN_DURATION_SEC = 1800; // 30 min — shorter runs dominated by HR transients, not steady-state
 
   const points = runs
     .filter(r =>
@@ -389,12 +389,15 @@ export function estimateZonesFromStatisticalAnalysis(
     })
     .sort((a, b) => a.pace - b.pace);
 
-  if (buckets.length < 8) return null;
+  // Enforce non-increasing HR with increasing pace via pool-adjacent-violators.
+  // Noise inversions between adjacent buckets corrupt R² and misplace breakpoints.
+  const mono = poolAdjacentViolators(buckets);
+  if (mono.length < 7) return null;
 
   // ── 4. Exhaustive piecewise linear search for two breakpoints ──────────
-  const nb = buckets.length;
-  const paceArr = buckets.map(b => b.pace);
-  const hrArr   = buckets.map(b => b.medianHR);
+  const nb = mono.length;
+  const paceArr = mono.map(b => b.pace);
+  const hrArr   = mono.map(b => b.medianHR);
 
   let bestErr = Infinity, bp1 = 2, bp2 = 4;
   for (let i = 1; i < nb - 3; i++) {
@@ -411,10 +414,11 @@ export function estimateZonesFromStatisticalAnalysis(
 
   if (rSquared < 0.62) return null;
 
-  const lt1PaceSecPerKm = paceArr[bp1];
-  const lt2PaceSecPerKm = paceArr[bp2];
-  const lt1HR = Math.round(hrArr[bp1]);
-  const lt2HR = Math.round(hrArr[bp2]);
+  // paceArr is sorted ascending (fast→slow); bp1 < bp2 so bp1 = fast = LT2, bp2 = slow = LT1
+  const lt2PaceSecPerKm = paceArr[bp1];
+  const lt1PaceSecPerKm = paceArr[bp2];
+  const lt2HR = Math.round(hrArr[bp1]);
+  const lt1HR = Math.round(hrArr[bp2]);
 
   // Sanity: LT1 < LT2 < maxHR with meaningful separation, and in realistic HR ranges
   if (lt1HR >= lt2HR - 8) return null; // minimum 8 bpm gap between thresholds
@@ -444,6 +448,27 @@ export function estimateZonesFromStatisticalAnalysis(
   if (!ensureValidZones(zones)) return null;
 
   return { lt1HR, lt2HR, lt1PaceSecPerKm, lt2PaceSecPerKm, rSquared, bucketCount: buckets.length, zones };
+}
+
+function poolAdjacentViolators(buckets: BucketPoint[]): BucketPoint[] {
+  const out = buckets.map(b => ({ ...b }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < out.length - 1; i++) {
+      if (out[i].medianHR < out[i + 1].medianHR) {
+        const tc = out[i].count + out[i + 1].count;
+        out.splice(i, 2, {
+          pace:     (out[i].pace     * out[i].count + out[i + 1].pace     * out[i + 1].count) / tc,
+          medianHR: (out[i].medianHR * out[i].count + out[i + 1].medianHR * out[i + 1].count) / tc,
+          count:    tc,
+        });
+        changed = true;
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 function segErr(paces: number[], hrs: number[], from: number, to: number): number {
