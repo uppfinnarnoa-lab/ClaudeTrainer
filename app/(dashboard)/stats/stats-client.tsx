@@ -202,19 +202,13 @@ export function StatsClient(props: Props) {
           </div>
 
           {/* 3-year monthly overlay */}
-          {extraViz && extraViz.monthlyOverlay.length > 0 && (
-            <MonthlyOverlayCard data={extraViz.monthlyOverlay} />
-          )}
+          <MonthlyOverlayCard data={extraViz?.monthlyOverlay ?? []} />
 
           {/* Monthly intensity profile */}
-          {extraViz && extraViz.intensityProfile.length > 0 && (
-            <IntensityProfileCard data={extraViz.intensityProfile} />
-          )}
+          <IntensityProfileCard data={extraViz?.intensityProfile ?? []} />
 
           {/* Activity heatmap */}
-          {extraViz && extraViz.heatmapData.length > 0 && (
-            <ActivityHeatmapCard data={extraViz.heatmapData} />
-          )}
+          <ActivityHeatmapCard data={extraViz?.heatmapData ?? []} />
         </div>
       )}
 
@@ -241,15 +235,13 @@ export function StatsClient(props: Props) {
           </SectionCard>
 
           {/* Pace zone distribution */}
-          {Object.values(paceZoneSeconds).some(v => v > 0) && (
-            <PaceZoneCard pzs={paceZoneSeconds} paceZones={paceZones} />
-          )}
+          <PaceZoneCard pzs={paceZoneSeconds} paceZones={paceZones} />
 
           {/* Statistical zone analysis from bucketed HR-pace data */}
-          {statZones && <StatisticalZonesCard sz={statZones} />}
+          <StatisticalZonesCard sz={statZones} />
 
           {/* Polarisation + 5-zone distribution */}
-          {polarisation && <PolarisationCard pol={polarisation} zoneSeconds={zoneSeconds} />}
+          <PolarisationCard pol={polarisation} zoneSeconds={zoneSeconds} />
 
           {/* HR zone table with LT/AT boundaries */}
           <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} decouplingLt1HR={decouplingLt1HR} criticalSpeedMs={criticalSpeedMs} manualMaxHR={manualMaxHR} manualRestHR={manualRestHR} />
@@ -379,38 +371,39 @@ export function StatsClient(props: Props) {
             </div>
 
             {/* Weather profile — temp + wind */}
-            {weatherStats && (weatherStats.byTemp.some(b => b.count > 0) || weatherStats.byWind.some(b => b.count > 0)) && (
-              <WeatherProfileCard weatherStats={weatherStats} />
-            )}
+            <WeatherProfileCard weatherStats={weatherStats} />
             </>
           )}
 
           {/* Easy pace trend */}
-          {easyPaceTrend.length >= 3 && (
-            <SectionCard
-              title="Aerobic pace trend"
-              tips={[tooltips.easyPaceTrend]}
-            >
-              <EasyPaceTrendChart data={easyPaceTrend} />
-            </SectionCard>
-          )}
+          <SectionCard
+            title="Aerobic pace trend"
+            tips={[tooltips.easyPaceTrend]}
+          >
+            {easyPaceTrend.length >= 3
+              ? <EasyPaceTrendChart data={easyPaceTrend} />
+              : <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+            }
+          </SectionCard>
 
           {/* VDOT trend over time */}
-          {extraViz && extraViz.vdotTrend.length >= 4 && (
-            <VdotTrendCard data={extraViz.vdotTrend} />
-          )}
+          <VdotTrendCard data={extraViz?.vdotTrend ?? []} />
 
           {/* OL terrain factor */}
-          {extraViz && extraViz.terrainFactor && (
-            <TerrainFactorCard tf={extraViz.terrainFactor} />
-          )}
+          <TerrainFactorCard tf={extraViz?.terrainFactor ?? null} />
         </div>
       )}
     </div>
   );
 }
 
-function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats }) {
+function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | null }) {
+  if (!weatherStats || (!weatherStats.byTemp.some(b => b.count > 0) && !weatherStats.byWind.some(b => b.count > 0))) return (
+    <div className="rounded-xl bg-surface border border-border p-5 space-y-5">
+      <p className="text-sm font-semibold text-primary">Weather profile</p>
+      <p className="text-xs text-muted py-4 text-center">No weather data — run Backfill weather data in Settings.</p>
+    </div>
+  );
   function fmtPace(sec: number | null): string {
     if (!sec) return "—";
     const m = Math.floor(sec / 60);
@@ -574,7 +567,16 @@ function LoadCard({ label, value, tip, color, sub }: { label: string; value: str
 
 function PaceZoneCard({ pzs, paceZones }: { pzs: Record<string, number>; paceZones: PaceZones }) {
   const totalSec = Object.values(pzs).reduce((s, v) => s + v, 0);
-  if (totalSec === 0) return null;
+  if (totalSec === 0) return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface-2">
+        <p className="text-sm font-semibold text-primary">Pace zone distribution (last 12 weeks · running)</p>
+      </div>
+      <div className="p-4">
+        <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+      </div>
+    </div>
+  );
   const ZONES = [
     { key: "easy",       label: "Easy",       color: "#7DD3FC", range: paceZones.easy },
     { key: "marathon",   label: "Marathon",   color: "#6EE7B7", range: paceZones.marathon },
@@ -841,9 +843,19 @@ const HR5_ZONES = [
 ];
 
 function PolarisationCard({ pol, zoneSeconds }: {
-  pol: { z1Pct: number; z2Pct: number; z3Pct: number };
+  pol: { z1Pct: number; z2Pct: number; z3Pct: number } | null;
   zoneSeconds?: Record<string, number>;
 }) {
+  if (!pol) return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface-2">
+        <p className="text-sm font-semibold text-primary">HR zone distribution (last 12 weeks)</p>
+      </div>
+      <div className="p-4">
+        <p className="text-xs text-muted py-4 text-center">No polarisation data available yet.</p>
+      </div>
+    </div>
+  );
   const { z1Pct, z2Pct, z3Pct } = pol;
   const score = Math.max(0, Math.round(100 - Math.abs(z1Pct - 80) * 0.8 - z2Pct * 1.5));
   const scoreColor = score >= 75 ? "#6EE7B7" : score >= 50 ? "#FBBF24" : "#F87171";
@@ -906,7 +918,17 @@ function PolarisationCard({ pol, zoneSeconds }: {
   );
 }
 
-function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult }) {
+function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult | null }) {
+  if (!sz) return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      <div className="px-4 py-3 border-b border-border bg-surface-2">
+        <p className="text-sm font-semibold text-primary">Statistisk zonanalys — HR vs tempo</p>
+      </div>
+      <div className="p-4">
+        <p className="text-xs text-muted py-4 text-center">Not enough data for statistical analysis — needs ≥ 40 runs with HR data.</p>
+      </div>
+    </div>
+  );
   const confColor = sz.rSquared >= 0.90 ? "#6EE7B7" : sz.rSquared >= 0.80 ? "#FBBF24" : "#F87171";
   const confLabel = sz.rSquared >= 0.90 ? "High" : sz.rSquared >= 0.80 ? "Medium" : "Low";
   return (
@@ -949,6 +971,12 @@ function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult }) {
 // ── NEW VISUALIZATION COMPONENTS ──────────────────────────────────────────────
 
 function ActivityHeatmapCard({ data }: { data: { week: string; km: number }[] }) {
+  if (data.length === 0) return (
+    <div className="rounded-xl border border-border p-4 space-y-3">
+      <p className="text-sm font-semibold text-primary">Activity heatmap — last 3 years (weekly km)</p>
+      <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+    </div>
+  );
   const maxKm = Math.max(...data.map(d => d.km), 1);
   // Group by year
   const years = [...new Set(data.map(d => d.week.slice(0, 4)))].sort().slice(-3);
@@ -994,6 +1022,12 @@ function ActivityHeatmapCard({ data }: { data: { week: string; km: number }[] })
 }
 
 function MonthlyOverlayCard({ data }: { data: { month: string; year: number; km: number }[] }) {
+  if (data.length === 0) return (
+    <div className="rounded-xl border border-border p-4 space-y-3">
+      <p className="text-sm font-semibold text-primary">3-year monthly volume overlay</p>
+      <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+    </div>
+  );
   const years = [...new Set(data.map(d => d.year))].sort();
   const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const COLORS = ["#818CF8","#6EE7B7","#F472B6"];
@@ -1034,6 +1068,12 @@ function MonthlyOverlayCard({ data }: { data: { month: string; year: number; km:
 }
 
 function IntensityProfileCard({ data }: { data: { month: string; easyMin: number; tempoMin: number; hardMin: number }[] }) {
+  if (data.length === 0) return (
+    <div className="rounded-xl border border-border p-4 space-y-3">
+      <p className="text-sm font-semibold text-primary">Monthly intensity distribution (last 12 months)</p>
+      <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+    </div>
+  );
   const last12 = data.slice(-12);
   return (
     <div className="rounded-xl border border-border p-4 space-y-3">
@@ -1064,6 +1104,12 @@ function IntensityProfileCard({ data }: { data: { month: string; easyMin: number
 }
 
 function VdotTrendCard({ data }: { data: { month: string; vdot: number }[] }) {
+  if (data.length < 4) return (
+    <div className="rounded-xl border border-border p-4 space-y-3">
+      <p className="text-sm font-semibold text-primary">VDOT trend (3-month rolling window)</p>
+      <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+    </div>
+  );
   const min = Math.min(...data.map(d => d.vdot)) - 2;
   const max = Math.max(...data.map(d => d.vdot)) + 2;
   const range = max - min || 1;
@@ -1093,7 +1139,13 @@ function VdotTrendCard({ data }: { data: { month: string; vdot: number }[] }) {
   );
 }
 
-function TerrainFactorCard({ tf }: { tf: { olPaceSecPerKm: number; roadPaceSecPerKm: number; olSessions: number; roadSessions: number } }) {
+function TerrainFactorCard({ tf }: { tf: { olPaceSecPerKm: number; roadPaceSecPerKm: number; olSessions: number; roadSessions: number } | null }) {
+  if (!tf) return (
+    <div className="rounded-xl border border-border p-4 space-y-3">
+      <p className="text-sm font-semibold text-primary">Orienteering terrain factor</p>
+      <p className="text-xs text-muted py-4 text-center">No data available yet.</p>
+    </div>
+  );
   const diff = tf.olPaceSecPerKm - tf.roadPaceSecPerKm;
   const pct = Math.round((diff / tf.roadPaceSecPerKm) * 100);
   const olMM = Math.floor(tf.olPaceSecPerKm / 60), olSS = tf.olPaceSecPerKm % 60;

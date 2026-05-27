@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
+import { Prisma } from "@prisma/client";
 import { StatsClient } from "./stats-client";
 import { StatsErrorBoundary } from "./stats-error-boundary";
 import { buildHRZones, buildPaceZones, buildPaceZonesFromLT, estimateLTFromRaces, estimateMaxHR, estimateMaxHRFromThreshold, estimateMaxHRFromRaces, ltBoundaries, estimateZonesFromStatisticalAnalysis, type HRZones } from "@/lib/fitness/zones";
@@ -139,6 +140,15 @@ export default async function StatsPage() {
       ? buildPaceZonesFromLT(ltFast.lt1PaceSecPerKm, ltFast.lt2PaceSecPerKm)
       : paceZones;
     const acwr = fitnessCache.acwr ?? null;
+    const extraViz = (fitnessCache.extraVizJson ?? null) as {
+      heatmapData: { week: string; km: number }[];
+      monthlyOverlay: { month: string; year: number; km: number }[];
+      intensityProfile: { month: string; easyMin: number; tempoMin: number; hardMin: number }[];
+      vdotTrend: { month: string; vdot: number }[];
+      terrainFactor: { olPaceSecPerKm: number; roadPaceSecPerKm: number; olSessions: number; roadSessions: number } | null;
+      perfByDistYear: { distance: string; period: string; time: number }[];
+    } | null;
+    const fastStatZones = (fitnessCache.statZonesJson ?? null) as import("@/lib/fitness/zones").StatisticalZoneResult | null;
 
     // Build sparklines from cached weekly volumes
     const sparklines = Array.from({ length: 8 }, (_, i) => {
@@ -278,7 +288,7 @@ export default async function StatsPage() {
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
-      null, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, null,
+      fastStatZones, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, extraViz,
       fitnessCache.decouplingLt1HR ?? null, fitnessCache.criticalSpeedMs ?? null,
       profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
       fpEasyPaceTrend);
@@ -703,6 +713,15 @@ export default async function StatsPage() {
   );
 
   const easyPaceTrend = computeEasyPaceTrend(activities as EasyPaceAct[], computedHrZones.z3[0]);
+
+  // Save extraViz + statZones to cache for fast-path reads (fire-and-forget)
+  prisma.fitnessCache.update({
+    where: { userId },
+    data: {
+      extraVizJson: { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor: terrainFactor ?? null, perfByDistYear } as Prisma.InputJsonValue,
+      statZonesJson: (statZones ?? null) as unknown as Prisma.InputJsonValue,
+    },
+  }).catch((e: unknown) => console.error("[stats] extraViz cache save failed:", e));
 
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, computedHrZones, vo2max, effectivePaceZones, predictions, polarisation, acwr, statZones, overviewRun,
