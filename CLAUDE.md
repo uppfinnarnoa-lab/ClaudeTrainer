@@ -1,6 +1,6 @@
 # TrainingLab
 
-Personal AI-powered training platform. Connects Strava activity data + Garmin physiological data with an AI coach. Single user, self-hosted on Ubuntu/Apache. See `IMPLEMENTATION_PLAN.md` for full feature spec.
+Personal AI-powered training platform. Connects Strava activity data + Garmin physiological data with an AI coach. Single user, self-hosted on Ubuntu/nginx. See `IMPLEMENTATION_PLAN.md` for full feature spec.
 
 ## Stack
 - **Framework**: Next.js 15 (App Router, TypeScript)
@@ -53,6 +53,7 @@ All project documentation lives in `docs/`. Determine which files apply to your 
 | [docs/architecture/overview.md](docs/architecture/overview.md) | Any work touching DB schema, file structure, or data flow |
 | [docs/integrations/strava.md](docs/integrations/strava.md) | Any work touching Strava, Garmin, weather, or AI APIs |
 | [docs/guides/workflows.md](docs/guides/workflows.md) | Running, building, or deploying the app |
+| [deployment/README.md](deployment/README.md) | Deploying to production (Ubuntu/nginx/helgars.se) |
 | [docs/guides/documentation-rules.md](docs/guides/documentation-rules.md) | Adding any endpoint, schema change, or cross-module function |
 | [docs/planning/MASTER_PLAN.md](docs/planning/MASTER_PLAN.md) | Current research, bug audit, and implementation plans |
 | [docs/fitness/](docs/fitness/) | VO2max models, HR zone research, analytics roadmap |

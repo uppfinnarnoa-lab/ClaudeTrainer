@@ -23,7 +23,7 @@ grep -r "ssl_certificate" /etc/nginx/sites-enabled/
 
 ## ⚠ 1b. Fix Cert Renewal Before Deploying
 
-**The wildcard cert expires in ~19 days (15 June 2026). Sort this out first.**
+**The wildcard cert expires 15 June 2026. Sort this out first.**
 
 ### Step A — Check if auto-renewal works at all
 
@@ -31,8 +31,8 @@ grep -r "ssl_certificate" /etc/nginx/sites-enabled/
 sudo certbot renew --dry-run
 ```
 
-- If it says **"Congratulations, all renewals succeeded"** → auto-renewal works, nothing to do.
-- If it says **"Challenge failed"** or similar error → continue to Step B.
+- **"Congratulations, all renewals succeeded"** → auto-renewal works, nothing to do.
+- **"Challenge failed"** or error → continue to Step B.
 
 ### Step B — Find out what DNS challenge method is used
 
@@ -42,38 +42,35 @@ Wildcard certs (`*.helgars.se`) require DNS-01 challenge — certbot must create
 Check what certbot is configured to do:
 ```bash
 sudo cat /etc/letsencrypt/renewal/helgars.se.conf
-# (folder name may differ — check: ls /etc/letsencrypt/renewal/)
+# folder name may differ — check: ls /etc/letsencrypt/renewal/
 ```
 
 Look for the `authenticator =` line:
-- `authenticator = dns-...` → certbot has a DNS plugin configured, should work automatically
-- `authenticator = manual` → renewal requires manual action (see Step C)
-- `authenticator = standalone` or `webroot` → this won't work for wildcards, cert was likely obtained manually
+- `dns-...` → DNS plugin configured, should work automatically
+- `manual` → renewal requires manual action (see Step D)
+- `standalone` or `webroot` → won't work for wildcards, cert was obtained manually
 
-### Step C — If renewal is manual or broken: check FortDDNS
+### Step C — Check FortDDNS involvement
 
-The key question is: **who controls the authoritative DNS for `helgars.se`?**
+Who controls the authoritative DNS for `helgars.se`?
 
 ```bash
 dig NS helgars.se
 ```
 
-- **If the nameservers belong to your domain registrar** (e.g. Loopia, One.com): FortDDNS only
-  updates the A record, not the nameservers. Cert renewal needs a plugin for that registrar,
-  or a manual DNS edit at the registrar each time.
-- **If the nameservers belong to FortDDNS**: FortDDNS controls DNS entirely. Check if FortDDNS
-  has an API — if yes, there may be a certbot plugin for it. Contact FortDDNS support to ask
-  how other users handle Let's Encrypt wildcard cert renewal.
+- **Nameservers at your registrar** (Loopia, One.com, etc.): FortDDNS only updates the A record.
+  Cert renewal needs a registrar plugin, or a manual DNS edit at the registrar each time.
+- **Nameservers at FortDDNS**: FortDDNS controls DNS entirely. Check if they have an API for
+  certbot. Contact FortDDNS support to ask how others handle Let's Encrypt wildcard renewal.
 
 ### Step D — Worst case: manual renewal (once per 90 days)
 
-If no automatic method is available, renew manually:
 ```bash
 sudo certbot certonly --manual --preferred-challenges dns -d "*.helgars.se"
 ```
-Certbot prints a TXT value to add as `_acme-challenge.helgars.se` in DNS.
-Add it at your registrar or FortDDNS panel, wait a minute, then press Enter.
-Set a calendar reminder for 60 days from now so you don't forget.
+
+Certbot prints a TXT value — add it as `_acme-challenge.helgars.se` in DNS (at registrar or
+FortDDNS panel), wait a minute, then press Enter. Set a calendar reminder for 60 days out.
 
 ---
 
@@ -174,26 +171,10 @@ pnpm build
 
 ## 7. PM2
 
-`ecosystem.config.js` is already in the repo. If missing, create it:
-
-```js
-module.exports = {
-  apps: [{
-    name: "traininglab",
-    script: "node_modules/.bin/next",
-    args: "start",
-    cwd: "/var/www/traininglab",
-    env: {
-      NODE_ENV: "production",
-      PORT: "3000",
-    },
-    max_memory_restart: "512M",
-  }]
-};
-```
+Start using the config in this folder:
 
 ```bash
-pm2 start ecosystem.config.js
+pm2 start deployment/ecosystem.config.js
 pm2 save
 pm2 startup   # run the sudo command it prints
 ```
@@ -203,7 +184,7 @@ pm2 startup   # run the sudo command it prints
 ## 8. nginx Server Block
 
 Create `/etc/nginx/sites-available/traininglab.conf`.
-**Replace the cert paths** with whatever `grep ssl_certificate` showed in Step 1.
+**Replace the cert paths** with whatever Step 1 showed.
 
 ```nginx
 server {
@@ -271,44 +252,16 @@ sudo systemctl reload nginx
 
 ---
 
-## 11. Deploy Script
-
-Save as `/var/www/traininglab/deploy.sh` and `chmod +x`:
+## 11. Updates (after first deploy)
 
 ```bash
-#!/bin/bash
-set -e
-
-APP_DIR="/var/www/traininglab"
-LOG="$APP_DIR/deploy.log"
-
-echo "=== Deploy started: $(date) ===" | tee -a "$LOG"
-cd "$APP_DIR"
-
-echo "[1/5] Pulling..." | tee -a "$LOG"
-git pull origin main 2>&1 | tee -a "$LOG"
-
-echo "[2/5] Installing dependencies..." | tee -a "$LOG"
-pnpm install --frozen-lockfile 2>&1 | tee -a "$LOG"
-
-echo "[3/5] Generating Prisma client..." | tee -a "$LOG"
-pnpm prisma generate 2>&1 | tee -a "$LOG"
-
-echo "[4/5] Running DB migrations..." | tee -a "$LOG"
-pnpm prisma migrate deploy 2>&1 | tee -a "$LOG"
-
-echo "[5/5] Building..." | tee -a "$LOG"
-pnpm build 2>&1 | tee -a "$LOG"
-
-echo "[6/6] Reloading PM2..." | tee -a "$LOG"
-pm2 reload traininglab 2>&1 | tee -a "$LOG"
-
-echo "=== Deploy complete: $(date) ===" | tee -a "$LOG"
+# From your Windows machine:
+ssh user@training.helgars.se "/var/www/traininglab/deployment/deploy.sh"
 ```
 
-Run from your Windows machine:
-```powershell
-ssh user@training.helgars.se "/var/www/traininglab/deploy.sh"
+Or on the server directly:
+```bash
+/var/www/traininglab/deployment/deploy.sh
 ```
 
 ---
@@ -331,15 +284,13 @@ tail -f /var/www/traininglab/deploy.log
 ## 13. Cert Renewal
 
 The wildcard cert auto-renews via certbot's systemd timer (~30 days before expiry).
-No action needed — it covers all `*.helgars.se` subdomains including `training`.
 
 ```bash
 sudo systemctl status certbot.timer    # should be active
 sudo certbot renew --dry-run           # test renewal manually
 ```
 
-> **Note:** Wildcard certs use DNS-01 challenge. If renewal fails, check how theodal's
-> cert renews (certbot hooks or manual DNS update) and apply the same method.
+> If renewal fails, follow steps 1b above.
 
 ---
 
@@ -360,4 +311,4 @@ df -h
 
 ---
 
-*Last updated: 2026-05-27*
+*Last updated: 2026-05-28*
