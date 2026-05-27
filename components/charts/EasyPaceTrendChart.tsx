@@ -201,7 +201,7 @@ export function EasyPaceTrendChart({ data }: Props) {
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="month"
-              tick={{ fontSize: 10, fill: "var(--muted)" }}
+              tick={{ fontSize: 10, fill: "var(--text-primary)" }}
               tickFormatter={v => {
                 if (quarterly) return v;
                 try { return format(parseISO(v + "-01"), "MMM yy"); } catch { return v; }
@@ -211,7 +211,7 @@ export function EasyPaceTrendChart({ data }: Props) {
             <YAxis
               domain={[minGap, maxGap]}
               reversed
-              tick={{ fontSize: 10, fill: "var(--muted)" }}
+              tick={{ fontSize: 10, fill: "var(--text-primary)" }}
               tickFormatter={v => formatPace(v)}
               width={42}
             />
