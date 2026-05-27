@@ -960,8 +960,7 @@ function StatisticalZonesCard({ sz, szLaps }: { sz: StatisticalZoneResult | null
             </button>
             <button
               onClick={() => setMode("laps")}
-              disabled={!hasLaps}
-              className={`px-2.5 py-1 border-l border-border ${mode === "laps" ? "bg-primary text-background font-semibold" : !hasLaps ? "text-muted/40 cursor-not-allowed" : "text-muted hover:text-primary"}`}
+              className={`px-2.5 py-1 border-l border-border ${mode === "laps" ? "bg-primary text-background font-semibold" : "text-muted hover:text-primary"}`}
             >
               Laps only
             </button>
