@@ -880,7 +880,8 @@ function computeWeatherStats(acts: WeatherAct[]): WeatherStats {
   // Filter out OL sessions and non-running types
   const isOL = (a: WeatherAct) =>
     /orienteer|ol\b|ol-/i.test(a.sportType) ||
-    /\bol\b|\borienteringsl|\bskogsl|\bolpass/i.test(a.name ?? "");
+    /\bol\b|\borienteringsl|\bskogsl|\bolpass/i.test(a.name ?? "") ||
+    /^\s*wu\b|^\s*cd\b|\bwarm.?up\b|\bcool.?down\b|\bnedvarvning\b|\buppvärmning\b/i.test(a.name ?? "");
 
   const clean = acts.filter(a =>
     a.averageSpeed && a.averageSpeed > 0 &&

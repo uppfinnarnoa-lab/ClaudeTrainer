@@ -1754,6 +1754,23 @@ sudo systemctl reload nginx
 - `app/(dashboard)/stats/stats-client.tsx` `ZoneCalibrationButton`: result panel now shows LT1/LT2 bpm, method name, and R² (when statistical method ran); useful for debugging without reading server logs
 - `CLAUDE.md`: Session End section updated — added step 3: restart dev server after every task
 
+**Session 2026-05-28 (10-issue bug audit):**
+- `app/api/strava/webhook-subscription/route.ts`: fix race condition — `verifyToken` now saved to DB *before* outbound Strava POST; Strava immediately fires GET validation against our endpoint which checks the DB; if Strava POST fails, token is cleared from DB
+- `app/(dashboard)/stats/page.tsx` + `stats-client.tsx`: fix pace zone bucketing — all cascade checks changed from `[0]` (slow boundary) to `[1]` (fast boundary); pace zones are stored `[slow, fast]` so comparing to index 0 was classifying most training as marathon+; fixes both fast path and slow path
+- `app/(dashboard)/stats/page.tsx`: weather/wind stats now exclude OL (orienteering) sessions — detected via sportType regex and name keywords; apply rolling 12-week fitness-drift correction (rolling median subtracted from each activity's pace before computing per-condition averages); added `median()` helper; minimum activity distance raised to 3 km; `isRace: false` filter added
+- `app/(dashboard)/stats/stats-client.tsx` `WeatherProfileCard`: replace CSS custom property colors (`var(--accent)` etc.) with hardcoded hex performance colors — green `#6EE7B7` (within 5 s/km), amber `#FBBF24` (5–15 s/km slower), red `#F87171` (15+ s/km slower); applies to both bar fills (opacity 0.7) and pace text
+- `app/(dashboard)/stats/stats-client.tsx` `IntensityProfileCard`: added Y-axis with hourly labels; computes `maxTotal` across all months, derives `yMax` rounded to 2h/5h increments; bars now scale to actual hours; month labels shown below columns
+- `app/(dashboard)/stats/stats-client.tsx` `ZoneCalibrationButton`: HR zone method selector added — three modes: "Auto (statistical + race PBs)", "% of max HR", "AI-assisted"; `% of max HR` shows LT1% and LT2% number inputs (defaults 83/89); calls `/api/coach/calibrate?mode=pct&lt1Pct=83&lt2Pct=89`
+- `app/api/coach/calibrate/route.ts`: new `pct` mode — builds zones from explicit % of maxHR; validates `lt1Pct < lt2Pct`; overrides LT boundaries in cache; returns same shape as other modes
+- `lib/fitness/critical-speed.ts`: added optional `racePBs?: Array<{ distanceM: number; timeSec: number }>` parameter; merges both sources via a Map, race PBs override activity best-efforts for the same distance
+- `lib/fitness/cache.ts`: Critical Speed call now passes `racePBs` from DB; decoupling query now fetches `weatherTemp` and `startDate`; `statisticalMax` percentile raised 70th → 80th
+- `lib/fitness/decoupling.ts`: CV threshold tightened 0.20 → 0.10; temperature filter — skip runs >28°C, weight 22–28°C at 0.4x, 18–22°C at 0.7x; always skip first split (warm-up); requires ≥ 4 splits after skip; HR range tightened 0.55–0.95 → 0.58–0.90 maxHR; weighted median per bucket; requires ≥ 3 buckets
+- `lib/fitness/zones.ts`: `MAXHR_ARTIFACT_CAP` raised 190 → 205 bpm; `estimateMaxHR` percentile 85th → 90th; `estimateMaxHRFromRaces` percentile 80th → 90th, minimum HR filter 140 → 150 bpm; `estimateMaxHRFromThreshold` divisor 0.88 → 0.89 (threshold ≈ 89% of max for trained runners)
+
+**Correct pace zone bucketing behavior (post-fix):**
+Pace zones are stored as `[slow_boundary, fast_boundary]` in sec/km (e.g., easy = [463, 368]).
+The cascade checks against the *fast* (lower sec/km) boundary: if `pace >= easy[1]` then it's easy (or slower than easy). Checking `[0]` was the bug — it required pace > 7:43/km to be classified easy, missing all 6:08–7:43/km easy training.
+
 **VO2max weighted model configuration (as of 2026-05-26):**
 | Model | With TSB+HR signals | No current signals |
 |---|---|---|
