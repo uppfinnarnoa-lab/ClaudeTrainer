@@ -110,6 +110,8 @@ export async function POST(req: Request) {
     ? (safeDecrypt(aiSettings.claudeApiKey) ?? process.env.ANTHROPIC_API_KEY)
     : aiSettings?.provider === "nvidia"
     ? safeDecrypt(aiSettings.nvidiaApiKey ?? null)
+    : aiSettings?.provider === "groq"
+    ? safeDecrypt(aiSettings.groqApiKey ?? null)
     : (safeDecrypt(aiSettings?.geminiApiKey ?? null) ?? process.env.GOOGLE_AI_API_KEY);
 
   if (!apiKey) {
@@ -197,6 +199,16 @@ Din JSON med rätt värden:`;
       const oaiClient = new OpenAI({ apiKey: apiKey!, baseURL: "https://integrate.api.nvidia.com/v1" });
       const res = await oaiClient.chat.completions.create({
         model: aiSettings.nvidiaModel ?? NVIDIA_DEFAULT_MODEL,
+        max_tokens: 600,
+        messages: [{ role: "user", content: prompt }],
+      });
+      rawText = res.choices[0]?.message?.content ?? "";
+    } else if (aiSettings?.provider === "groq") {
+      const OpenAI = (await import("openai")).default;
+      const { GROQ_DEFAULT_MODEL } = await import("@/lib/ai/groq");
+      const oaiClient = new OpenAI({ apiKey: apiKey!, baseURL: "https://api.groq.com/openai/v1" });
+      const res = await oaiClient.chat.completions.create({
+        model: aiSettings.groqModel ?? GROQ_DEFAULT_MODEL,
         max_tokens: 600,
         messages: [{ role: "user", content: prompt }],
       });

@@ -327,6 +327,8 @@ model AISettings {
   geminiApiKey String?
   nvidiaApiKey String?
   nvidiaModel  String? // default: "nvidia/llama-3.1-nemotron-70b-instruct-hq"
+  groqApiKey   String?
+  groqModel    String? // default: "llama-3.3-70b-versatile"
   systemPrompt String?
   // Claude budget
   monthlyBudgetUsd     Float @default(5.0)

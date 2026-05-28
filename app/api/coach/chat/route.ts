@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/prisma";
 import { ClaudeClient } from "@/lib/ai/claude";
 import { GeminiClient } from "@/lib/ai/gemini";
 import { NvidiaClient, NVIDIA_DEFAULT_MODEL } from "@/lib/ai/nvidia";
+import { GroqClient, GROQ_DEFAULT_MODEL } from "@/lib/ai/groq";
 import { buildCoachContext, buildRecentActivitiesSummary } from "@/lib/ai/context-builder";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { estimateCost } from "@/lib/ai/client";
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
     ? (safeDecrypt(aiSettings?.claudeApiKey) ?? process.env.ANTHROPIC_API_KEY ?? "")
     : provider === "nvidia"
     ? (safeDecrypt(aiSettings?.nvidiaApiKey) ?? "")
+    : provider === "groq"
+    ? (safeDecrypt(aiSettings?.groqApiKey) ?? "")
     : (safeDecrypt(aiSettings?.geminiApiKey) ?? process.env.GOOGLE_AI_API_KEY ?? "");
 
   if (!apiKey) {
@@ -77,8 +80,8 @@ export async function POST(req: NextRequest) {
       aiSettings.currentMonthSpendUsd = 0;
       aiSettings.geminiCurrentMonthSpendUsd = 0;
     }
-    const budget  = provider === "gemini" ? aiSettings.geminiMonthlyBudgetUsd  : provider === "nvidia" ? 0 : aiSettings.monthlyBudgetUsd;
-    const current = provider === "gemini" ? aiSettings.geminiCurrentMonthSpendUsd : provider === "nvidia" ? 0 : aiSettings.currentMonthSpendUsd;
+    const budget  = provider === "gemini" ? aiSettings.geminiMonthlyBudgetUsd  : (provider === "nvidia" || provider === "groq") ? 0 : aiSettings.monthlyBudgetUsd;
+    const current = provider === "gemini" ? aiSettings.geminiCurrentMonthSpendUsd : (provider === "nvidia" || provider === "groq") ? 0 : aiSettings.currentMonthSpendUsd;
     if (budget > 0 && current >= budget) {
       return new Response(
         JSON.stringify({ error: "budget_exceeded", provider, budget, current }),
@@ -208,6 +211,38 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch { /* tool check failed */ }
+  } else if (provider === "groq") {
+    try {
+      const OpenAI = (await import("openai")).default;
+      const oaiClient = new OpenAI({ apiKey, baseURL: "https://api.groq.com/openai/v1" });
+      const groqModel = aiSettings?.groqModel ?? GROQ_DEFAULT_MODEL;
+      const toolCheck = await oaiClient.chat.completions.create({
+        model: groqModel,
+        max_tokens: 400,
+        tools: toOpenAITools(),
+        tool_choice: "auto",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+        ],
+      });
+      const choice = toolCheck.choices[0];
+      if (choice?.finish_reason === "tool_calls" && choice.message.tool_calls?.[0]) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tc = choice.message.tool_calls[0] as any;
+        const toolName = tc.function.name as string;
+        const toolInput = JSON.parse(tc.function.arguments as string) as Record<string, unknown>;
+        if (WRITE_TOOLS.has(toolName)) {
+          toolEvent = { name: toolName, message: describeAction(toolName, toolInput), success: true, pending: true, pendingInput: toolInput };
+          messages.push({ role: "assistant", content: `[Inväntar godkännande: ${toolName}] ${toolEvent.message}` });
+        } else {
+          const result = await executeCoachTool(toolName, toolInput, userId);
+          toolEvent = { name: toolName, message: result.message, success: result.success };
+          messages.push({ role: "assistant", content: `[Tool: ${toolName}]\n${result.data}` });
+          messages.push({ role: "user", content: "Analysera och svara på min fråga baserat på dessa data." });
+        }
+      }
+    } catch { /* tool check failed */ }
   } else {
     // Gemini function calling
     try {
@@ -251,6 +286,8 @@ export async function POST(req: NextRequest) {
     ? new ClaudeClient(apiKey)
     : provider === "nvidia"
     ? new NvidiaClient(apiKey, aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL)
+    : provider === "groq"
+    ? new GroqClient(apiKey, aiSettings?.groqModel ?? GROQ_DEFAULT_MODEL)
     : new GeminiClient(apiKey);
 
   const encoder = new TextEncoder();
@@ -296,7 +333,7 @@ export async function POST(req: NextRequest) {
             content: fullResponse,
             tokensUsed: inputTokens + outputTokens,
             estimatedCostUsd: cost,
-            modelUsed: provider === "claude" ? "claude-sonnet-4-6" : provider === "nvidia" ? (aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL) : "gemini-2.5-flash",
+            modelUsed: provider === "claude" ? "claude-sonnet-4-6" : provider === "nvidia" ? (aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL) : provider === "groq" ? (aiSettings?.groqModel ?? GROQ_DEFAULT_MODEL) : "gemini-2.5-flash",
           },
         });
 
@@ -304,12 +341,12 @@ export async function POST(req: NextRequest) {
         if (cost > 0) {
           const updateField = provider === "gemini"
             ? { geminiCurrentMonthSpendUsd: { increment: cost } }
-            : provider === "nvidia"
+            : (provider === "nvidia" || provider === "groq")
             ? {}  // free tier — no spend tracking needed
             : { currentMonthSpendUsd: { increment: cost } };
           const createField = provider === "gemini"
             ? { geminiCurrentMonthSpendUsd: cost }
-            : provider === "nvidia"
+            : (provider === "nvidia" || provider === "groq")
             ? {}
             : { currentMonthSpendUsd: cost };
           await prisma.aISettings.upsert({

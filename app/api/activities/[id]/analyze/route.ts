@@ -97,6 +97,8 @@ Analyze: (1) workout execution quality — were intervals consistent, was intens
     ? (safeDecrypt(aiSettings?.claudeApiKey) ?? process.env.ANTHROPIC_API_KEY ?? "")
     : provider === "nvidia"
     ? (safeDecrypt(aiSettings?.nvidiaApiKey) ?? "")
+    : provider === "groq"
+    ? (safeDecrypt(aiSettings?.groqApiKey) ?? "")
     : (safeDecrypt(aiSettings?.geminiApiKey) ?? process.env.GOOGLE_AI_API_KEY ?? "");
 
   if (!apiKey) return new Response("No AI API key configured", { status: 503 });
@@ -127,6 +129,26 @@ Analyze: (1) workout execution quality — were intervals consistent, was intens
     const oaiClient = new OpenAI({ apiKey, baseURL: "https://integrate.api.nvidia.com/v1" });
     const stream = await oaiClient.chat.completions.create({
       model: aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL,
+      max_tokens: 500,
+      messages: [{ role: "user", content: prompt }],
+      stream: true,
+    });
+    const readable = new ReadableStream({
+      async start(controller) {
+        for await (const chunk of stream) {
+          const text = chunk.choices[0]?.delta?.content ?? "";
+          if (text) controller.enqueue(encoder.encode(text));
+        }
+        controller.close();
+      },
+    });
+    return new Response(readable, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  } else if (provider === "groq") {
+    const OpenAI = (await import("openai")).default;
+    const { GROQ_DEFAULT_MODEL } = await import("@/lib/ai/groq");
+    const oaiClient = new OpenAI({ apiKey, baseURL: "https://api.groq.com/openai/v1" });
+    const stream = await oaiClient.chat.completions.create({
+      model: aiSettings?.groqModel ?? GROQ_DEFAULT_MODEL,
       max_tokens: 500,
       messages: [{ role: "user", content: prompt }],
       stream: true,

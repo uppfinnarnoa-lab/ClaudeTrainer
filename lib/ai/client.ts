@@ -14,7 +14,7 @@ export interface StreamChunk {
 }
 
 export interface AIClient {
-  provider: "claude" | "gemini" | "nvidia";
+  provider: "claude" | "gemini" | "nvidia" | "groq";
   stream(
     systemPrompt: string,
     messages: AIMessage[],
@@ -41,7 +41,7 @@ export const PRICING = {
 };
 
 export function estimateCost(
-  provider: "claude" | "gemini" | "nvidia",
+  provider: "claude" | "gemini" | "nvidia" | "groq",
   inputTokens: number,
   outputTokens: number,
   cacheReadTokens = 0,
