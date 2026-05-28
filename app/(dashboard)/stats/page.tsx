@@ -149,7 +149,6 @@ export default async function StatsPage() {
       terrainFactor: { olPaceSecPerKm: number; roadPaceSecPerKm: number; olSessions: number; roadSessions: number } | null;
       perfByDistYear: { distance: string; period: string; time: number }[];
     } | null;
-    const fastStatZones     = (fitnessCache.statZonesJson     ?? null) as import("@/lib/fitness/zones").StatisticalZoneResult | null;
     const fastStatZonesLaps = (fitnessCache.statZonesLapsJson ?? null) as import("@/lib/fitness/zones").StatisticalZoneResult | null;
 
     // Build sparklines from cached weekly volumes
@@ -290,7 +289,7 @@ export default async function StatsPage() {
 
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
-      fastStatZones, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, extraViz,
+      overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, extraViz,
       profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
       fpEasyPaceTrend, fastStatZonesLaps);
   }
@@ -750,7 +749,7 @@ export default async function StatsPage() {
   }).catch((e: unknown) => console.error("[stats] extraViz cache save failed:", e));
 
   return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, computedHrZones, vo2max, effectivePaceZones, predictions, polarisation, acwr, statZones, overviewRun,
+    zoneSeconds, computedHrZones, vo2max, effectivePaceZones, predictions, polarisation, acwr, overviewRun,
     { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
     modelPredictions, modelVdots,
     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear },
@@ -784,7 +783,6 @@ function renderStats(
   predictions: { label: string; meters: number; peak: number; today: number; riegel: number | null; rangeLo: number; rangeHi: number }[],
   polarisation: { z1Pct: number; z2Pct: number; z3Pct: number } | null,
   acwr: number | null,
-  statZones?: import("@/lib/fitness/zones").StatisticalZoneResult | null,
   overviewRun?: OverviewData,
   analytics?: Analytics1A | null,
   paceZoneSeconds?: Record<string, number>,
@@ -825,7 +823,6 @@ function renderStats(
         predictions={predictions}
         polarisation={polarisation}
         acwr={acwr}
-        statZones={statZones ?? null}
         overviewRun={overviewRun ?? overview}
         analytics={analytics ?? null}
         paceZoneSeconds={paceZoneSeconds ?? {}}

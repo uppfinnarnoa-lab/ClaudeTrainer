@@ -40,7 +40,6 @@ interface Props {
   predictions: RacePred[];
   polarisation: Polarisation | null;
   acwr: number | null;
-  statZones: StatisticalZoneResult | null;
   overviewRun: {
     thisWeek: SumData; thisMonth: SumData; ytd: SumData;
     lyWeek: SumData; lyMonth: SumData; lyYtd: SumData;
@@ -83,7 +82,7 @@ export function StatsClient(props: Props) {
   const [sportMode, setSportMode] = useState<"all" | "run">("all");
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
-    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, statZonesLaps, analytics, paceZoneSeconds,
+    zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZonesLaps, analytics, paceZoneSeconds,
     modelPredictions, modelVdots, extraViz, manualMaxHR, manualRestHR, weatherStats, easyPaceTrend } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
@@ -239,7 +238,7 @@ export function StatsClient(props: Props) {
           <PaceZoneCard pzs={paceZoneSeconds} paceZones={paceZones} />
 
           {/* Statistical zone analysis from bucketed HR-pace data */}
-          <StatisticalZonesCard sz={statZones} szLaps={statZonesLaps} />
+          <StatisticalZonesCard sz={statZonesLaps} />
 
           {/* Polarisation + 5-zone distribution */}
           <PolarisationCard pol={polarisation} zoneSeconds={zoneSeconds} />
@@ -924,22 +923,7 @@ function PolarisationCard({ pol, zoneSeconds }: {
   );
 }
 
-function StatisticalZonesCard({ sz, szLaps }: { sz: StatisticalZoneResult | null; szLaps: StatisticalZoneResult | null }) {
-  const [mode, setMode] = useState<"combined" | "laps">("combined");
-  const active = mode === "laps" ? szLaps : sz;
-  const hasLaps = szLaps !== null;
-
-  if (!sz && !szLaps) return (
-    <div className="rounded-xl border border-border overflow-hidden">
-      <div className="px-4 py-3 border-b border-border bg-surface-2">
-        <p className="text-sm font-semibold text-primary">Statistisk zonanalys — HR vs tempo</p>
-      </div>
-      <div className="p-4">
-        <p className="text-xs text-muted py-4 text-center">Not enough data for statistical analysis — needs ≥ 40 runs with HR data.</p>
-      </div>
-    </div>
-  );
-
+function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult | null }) {
   const confColor = (r: number) => r >= 0.90 ? "#6EE7B7" : r >= 0.80 ? "#FBBF24" : "#F87171";
   const confLabel = (r: number) => r >= 0.90 ? "High" : r >= 0.80 ? "Medium" : "Low";
 
@@ -947,56 +931,38 @@ function StatisticalZonesCard({ sz, szLaps }: { sz: StatisticalZoneResult | null
     <div className="rounded-xl border border-border overflow-hidden">
       <div className="px-4 py-3 border-b border-border bg-surface-2 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-primary">Statistisk zonanalys — HR vs tempo</p>
-          {active && <p className="text-xs text-muted mt-0.5">{active.bucketCount} pace buckets · piecewise regression</p>}
+          <p className="text-sm font-semibold text-primary">Statistisk tröskelestimering</p>
+          {sz && <p className="text-xs text-muted mt-0.5">{sz.bucketCount} tempo-buckets · piecewise regression</p>}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {active && (
-            <span className="text-xs font-semibold font-mono" style={{ color: confColor(active.rSquared) }}>
-              R² {active.rSquared.toFixed(2)} · {confLabel(active.rSquared)}
-            </span>
-          )}
-          <div className="flex rounded-lg border border-border overflow-hidden text-xs">
-            <button
-              onClick={() => setMode("combined")}
-              className={`px-2.5 py-1 ${mode === "combined" ? "bg-primary text-background font-semibold" : "text-muted hover:text-primary"}`}
-            >
-              Combined
-            </button>
-            <button
-              onClick={() => setMode("laps")}
-              className={`px-2.5 py-1 border-l border-border ${mode === "laps" ? "bg-primary text-background font-semibold" : "text-muted hover:text-primary"}`}
-            >
-              Laps only
-            </button>
-          </div>
-        </div>
+        {sz && (
+          <span className="text-xs font-semibold font-mono shrink-0" style={{ color: confColor(sz.rSquared) }}>
+            R² {sz.rSquared.toFixed(2)} · {confLabel(sz.rSquared)}
+          </span>
+        )}
       </div>
-      {!active ? (
+      {!sz ? (
         <div className="p-4">
-          <p className="text-xs text-muted py-4 text-center">
-            {mode === "laps" ? "No lap data yet — run a Strava laps backfill first." : "Not enough data for statistical analysis."}
-          </p>
+          <p className="text-xs text-muted py-4 text-center">Ingen lapdata ännu — kör en Strava-backfill av laps först.</p>
         </div>
       ) : (
         <>
           <div className="p-4 grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT1 — Aerobic Threshold</p>
-              <p className="text-2xl font-semibold font-mono text-primary">{active.lt1HR} <span className="text-sm text-muted font-normal">bpm</span></p>
-              <p className="text-xs text-muted">Pace: {secPerKmToPaceStr(active.lt1PaceSecPerKm)}/km (GAP)</p>
-              <p className="text-xs text-muted">Z2/Z3 boundary — easy sessions stay below this</p>
+              <p className="text-2xl font-semibold font-mono text-primary">{sz.lt1HR} <span className="text-sm text-muted font-normal">bpm</span></p>
+              <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)}/km (GAP)</p>
+              <p className="text-xs text-muted">Z2/Z3-gräns — lugna pass stannar under detta</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT2 — Lactate Threshold</p>
-              <p className="text-2xl font-semibold font-mono text-primary">{active.lt2HR} <span className="text-sm text-muted font-normal">bpm</span></p>
-              <p className="text-xs text-muted">Pace: {secPerKmToPaceStr(active.lt2PaceSecPerKm)}/km (GAP)</p>
-              <p className="text-xs text-muted">Z3/Z4 boundary — threshold training level</p>
+              <p className="text-2xl font-semibold font-mono text-primary">{sz.lt2HR} <span className="text-sm text-muted font-normal">bpm</span></p>
+              <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt2PaceSecPerKm)}/km (GAP)</p>
+              <p className="text-xs text-muted">Z3/Z4-gräns — tröskelintensitet</p>
             </div>
           </div>
           <div className="border-t border-border px-4 py-3 bg-surface-2">
             <p className="text-xs text-muted">
-              Estimated from {active.bucketCount} pace buckets. Use the calibration button above to apply these zones.
+              Estimerat från {sz.bucketCount} tempo-buckets. Använd kalibrationsknappen ovan för att tillämpa dessa zoner.
             </p>
           </div>
         </>
