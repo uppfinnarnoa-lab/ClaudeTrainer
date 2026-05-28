@@ -5,17 +5,43 @@ export interface CriticalSpeedResult {
   effortsUsed: number;
 }
 
+/**
+ * Estimate Critical Speed from a combined pool of:
+ *  - Activity best-effort segments (from Strava JSON)
+ *  - Race PBs from RaceRecord table (more reliable for longer distances)
+ *
+ * Linear regression: time/distance = CS_inv + W'/distance
+ * CS = 1/intercept (m/s), W' = slope (meters of anaerobic capacity)
+ */
 export function estimateCriticalSpeed(
-  bestEfforts: Array<{ distance: number; elapsed_time: number }>
+  bestEfforts: Array<{ distance: number; elapsed_time: number }>,
+  racePBs?: Array<{ distanceM: number; timeSec: number }>,
 ): CriticalSpeedResult | null {
-  // Filter to efforts in the 200m–10km range, require at least 3 points
-  const usable = bestEfforts.filter(e => e.distance >= 200 && e.distance <= 10000 && e.elapsed_time > 0);
+  // Merge both sources; race PBs take priority for the same distance
+  const merged = new Map<number, number>(); // distance → best time
+
+  for (const e of bestEfforts) {
+    if (e.distance >= 200 && e.distance <= 10000 && e.elapsed_time > 0) {
+      const d = Math.round(e.distance);
+      if (!merged.has(d) || merged.get(d)! > e.elapsed_time) merged.set(d, e.elapsed_time);
+    }
+  }
+
+  if (racePBs) {
+    for (const r of racePBs) {
+      if (r.distanceM >= 200 && r.distanceM <= 10000 && r.timeSec > 0) {
+        const d = Math.round(r.distanceM);
+        // Race PBs override activity best-efforts for the same distance
+        if (!merged.has(d) || merged.get(d)! > r.timeSec) merged.set(d, r.timeSec);
+      }
+    }
+  }
+
+  const usable = [...merged.entries()].map(([distance, elapsed_time]) => ({ distance, elapsed_time }));
   if (usable.length < 3) return null;
 
   // Linear regression: time/distance = CS_inv + W'/distance
   // i.e. y = a + b*x  where  y = time/distance, x = 1/distance
-  // CS = 1/a (intercept is inverted), W' = b/a
-  // Rearranged: y = (W') * x + CS_inv  =>  slope=W', intercept=CS_inv
   const n = usable.length;
   const xs = usable.map(e => 1 / e.distance);
   const ys = usable.map(e => e.elapsed_time / e.distance);
@@ -33,8 +59,8 @@ export function estimateCriticalSpeed(
 
   if (intercept <= 0) return null;
 
-  const csMs     = 1 / intercept;
-  const wPrime   = slope;
+  const csMs   = 1 / intercept;
+  const wPrime = slope;
 
   // R²
   const yMean = sumY / n;

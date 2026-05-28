@@ -425,75 +425,93 @@ function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | nul
   const fastestWindPace = windsWithPace.length > 0
     ? Math.min(...windsWithPace.map(b => b.avgPaceSecPerKm!)) : null;
 
-  function paceColor(sec: number | null, fastest: number | null): string {
-    if (!sec || !fastest) return "var(--text-muted)";
+  // Hardcoded colors (not CSS vars) so they work in inline styles regardless of theme
+  function paceBarColor(sec: number | null, fastest: number | null): string {
+    if (!sec || !fastest) return "#94A3B8"; // muted grey
     const diff = sec - fastest;
-    if (diff < 5)  return "var(--accent)";       // within 5s/km of fastest
-    if (diff < 15) return "var(--text-primary)";
-    return "#F87171";                             // 15+ s/km slower
+    if (diff < 5)  return "#6EE7B7"; // green — within 5 s/km of best
+    if (diff < 15) return "#FBBF24"; // amber — moderate slowdown
+    return "#F87171";                // red — 15+ s/km slower
+  }
+
+  function paceTextColor(sec: number | null, fastest: number | null): string {
+    if (!sec || !fastest) return "#94A3B8";
+    const diff = sec - fastest;
+    if (diff < 5)  return "#6EE7B7";
+    if (diff < 15) return "#FBBF24";
+    return "#F87171";
   }
 
   return (
     <div className="rounded-xl bg-surface border border-border p-5 space-y-5">
-      <p className="text-sm font-semibold text-primary">Weather profile</p>
+      <div>
+        <p className="text-sm font-semibold text-primary">Weather profile</p>
+        <p className="text-[10px] text-muted mt-0.5">Pace adjusted for fitness drift — OL sessions excluded. Green = fastest band, red = 15+ s/km slower.</p>
+      </div>
 
       {tempBands.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted uppercase tracking-wide">Avg pace by temperature</p>
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">Adjusted pace by temperature</p>
           <div className="space-y-1.5">
-            {tempBands.map(band => (
-              <div key={band.label} className="flex items-center gap-3">
-                <span className="text-xs text-muted w-20 shrink-0">{band.label}</span>
-                <div className="flex-1 relative h-6 flex items-center">
-                  <div className="h-1.5 rounded-full bg-surface-2 w-full" />
-                  <div
-                    className="absolute h-1.5 rounded-full"
-                    style={{
-                      width: `${(band.count / maxTempCount) * 100}%`,
-                      backgroundColor: "var(--accent)",
-                      opacity: 0.4,
-                    }}
-                  />
+            {tempBands.map(band => {
+              const barColor = paceBarColor(band.avgPaceSecPerKm, fastestTempPace);
+              const textColor = paceTextColor(band.avgPaceSecPerKm, fastestTempPace);
+              return (
+                <div key={band.label} className="flex items-center gap-3">
+                  <span className="text-xs text-muted w-20 shrink-0">{band.label}</span>
+                  <div className="flex-1 relative h-5 flex items-center">
+                    <div className="h-2 rounded-full bg-surface-2 w-full" />
+                    <div
+                      className="absolute h-2 rounded-full transition-all"
+                      style={{
+                        width: `${(band.count / maxTempCount) * 100}%`,
+                        backgroundColor: barColor,
+                        opacity: 0.7,
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs font-mono font-semibold w-16 text-right shrink-0"
+                    style={{ color: textColor }}>
+                    {fmtPace(band.avgPaceSecPerKm)}
+                  </span>
+                  <span className="text-[10px] text-muted w-10 text-right shrink-0">{band.count}×</span>
                 </div>
-                <span className="text-xs font-mono w-16 text-right shrink-0"
-                  style={{ color: paceColor(band.avgPaceSecPerKm, fastestTempPace) }}>
-                  {fmtPace(band.avgPaceSecPerKm)}
-                </span>
-                <span className="text-[10px] text-muted w-10 text-right shrink-0">{band.count}×</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <p className="text-[10px] text-muted">Color: green = fastest, red = 15+ s/km slower</p>
         </div>
       )}
 
       {windBands.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted uppercase tracking-wide">Avg pace by wind (km/h)</p>
+          <p className="text-xs font-medium text-muted uppercase tracking-wide">Adjusted pace by wind (km/h)</p>
           <div className="space-y-1.5">
-            {windBands.map(band => (
-              <div key={band.label} className="flex items-center gap-3">
-                <span className="text-xs text-muted w-28 shrink-0">{band.label}</span>
-                <div className="flex-1 relative h-6 flex items-center">
-                  <div className="h-1.5 rounded-full bg-surface-2 w-full" />
-                  <div
-                    className="absolute h-1.5 rounded-full"
-                    style={{
-                      width: `${(band.count / maxWindCount) * 100}%`,
-                      backgroundColor: "#818CF8",
-                      opacity: 0.4,
-                    }}
-                  />
+            {windBands.map(band => {
+              const barColor = paceBarColor(band.avgPaceSecPerKm, fastestWindPace);
+              const textColor = paceTextColor(band.avgPaceSecPerKm, fastestWindPace);
+              return (
+                <div key={band.label} className="flex items-center gap-3">
+                  <span className="text-xs text-muted w-28 shrink-0">{band.label}</span>
+                  <div className="flex-1 relative h-5 flex items-center">
+                    <div className="h-2 rounded-full bg-surface-2 w-full" />
+                    <div
+                      className="absolute h-2 rounded-full transition-all"
+                      style={{
+                        width: `${(band.count / maxWindCount) * 100}%`,
+                        backgroundColor: barColor,
+                        opacity: 0.7,
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs font-mono font-semibold w-16 text-right shrink-0"
+                    style={{ color: textColor }}>
+                    {fmtPace(band.avgPaceSecPerKm)}
+                  </span>
+                  <span className="text-[10px] text-muted w-10 text-right shrink-0">{band.count}×</span>
                 </div>
-                <span className="text-xs font-mono w-16 text-right shrink-0"
-                  style={{ color: paceColor(band.avgPaceSecPerKm, fastestWindPace) }}>
-                  {fmtPace(band.avgPaceSecPerKm)}
-                </span>
-                <span className="text-[10px] text-muted w-10 text-right shrink-0">{band.count}×</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <p className="text-[10px] text-muted">Bar width = number of runs · Calm baseline vs windy sessions</p>
         </div>
       )}
     </div>
@@ -620,16 +638,23 @@ function PaceZoneCard({ pzs, paceZones }: { pzs: Record<string, number>; paceZon
   );
 }
 
+type CalibMethod = "algorithmic" | "ai" | "pct_maxhr";
+
 function ZoneCalibrationButton() {
-  const [loading, setLoading] = useState<"algo" | "ai" | null>(null);
+  const [loading, setLoading] = useState<CalibMethod | null>(null);
+  const [method,  setMethod]  = useState<CalibMethod>("algorithmic");
+  const [lt1Pct,  setLt1Pct]  = useState(83);
+  const [lt2Pct,  setLt2Pct]  = useState(89);
   const [result, setResult] = useState<{ insights?: string | null; maxHR?: number; vo2max?: number; aiApplied?: boolean; rSquared?: number | null; zonesMethod?: string; lt1HR?: number; lt2HR?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const calibrate = useCallback(async (mode: "algorithmic" | "ai") => {
-    setLoading(mode === "algorithmic" ? "algo" : "ai");
+  const calibrate = useCallback(async () => {
+    setLoading(method);
     setResult(null); setError(null);
     try {
-      const res = await fetch(`/api/coach/calibrate?mode=${mode}`, { method: "POST" });
+      let url = `/api/coach/calibrate?mode=${method === "pct_maxhr" ? "pct" : method}`;
+      if (method === "pct_maxhr") url += `&lt1Pct=${lt1Pct}&lt2Pct=${lt2Pct}`;
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
       setResult({
@@ -643,29 +668,54 @@ function ZoneCalibrationButton() {
         lt2HR: data.lt2HR,
       });
     } catch (e) {
-      setError(mode === "ai" ? "AI calibration failed — check your API key in Settings." : "Calibration failed.");
+      setError(method === "ai" ? "AI calibration failed — check your API key in Settings." : "Calibration failed.");
       console.error(e);
     } finally {
       setLoading(null);
     }
-  }, []);
+  }, [method, lt1Pct, lt2Pct]);
+
+  const methodLabel: Record<CalibMethod, string> = {
+    algorithmic: "Auto (statistical + race PBs)",
+    ai:          "AI-assisted",
+    pct_maxhr:   "% of max HR",
+  };
 
   return (
     <div className="space-y-2">
+      {/* Method selector */}
+      <div className="flex gap-1 rounded-lg border border-border p-0.5 text-xs">
+        {(["algorithmic", "pct_maxhr", "ai"] as CalibMethod[]).map(m => (
+          <button key={m} onClick={() => setMethod(m)}
+            className={cn("px-2.5 py-1 rounded-md transition-colors whitespace-nowrap",
+              method === m ? "bg-accent/10 text-accent" : "text-muted hover:text-primary"
+            )}>
+            {methodLabel[m]}
+          </button>
+        ))}
+      </div>
+
+      {/* % maxHR inputs */}
+      {method === "pct_maxhr" && (
+        <div className="flex items-center gap-3 text-xs">
+          <label className="text-muted">LT1 %:</label>
+          <input type="number" min={60} max={95} value={lt1Pct}
+            onChange={e => setLt1Pct(Number(e.target.value))}
+            className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1 text-primary text-center" />
+          <label className="text-muted">LT2 %:</label>
+          <input type="number" min={70} max={98} value={lt2Pct}
+            onChange={e => setLt2Pct(Number(e.target.value))}
+            className="w-14 rounded-lg border border-border bg-surface-2 px-2 py-1 text-primary text-center" />
+          <span className="text-muted">of max HR</span>
+        </div>
+      )}
+
       <div className="flex gap-2">
-        <button onClick={() => calibrate("algorithmic")} disabled={!!loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border hover:border-accent/40 hover:text-primary text-muted transition disabled:opacity-50"
-          title="Estimate HR zones from training data (no AI)">
-          {loading === "algo"
+        <button onClick={calibrate} disabled={!!loading}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border hover:border-accent/40 hover:text-primary text-muted transition disabled:opacity-50">
+          {loading
             ? <><Loader2 size={13} className="animate-spin" />Calculating…</>
-            : <><RefreshCw size={13} />Estimate zones</>}
-        </button>
-        <button onClick={() => calibrate("ai")} disabled={!!loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-accent/30 bg-accent/5 hover:bg-accent/10 text-accent transition disabled:opacity-50"
-          title="Let AI analyze your race times and hard sessions to estimate zones">
-          {loading === "ai"
-            ? <><Loader2 size={13} className="animate-spin" />AI analyserar…</>
-            : "AI-estimat"}
+            : <><RefreshCw size={13} />Apply zones</>}
         </button>
       </div>
       {result && (
@@ -1110,29 +1160,57 @@ function IntensityProfileCard({ data }: { data: { month: string; easyMin: number
     </div>
   );
   const last12 = data.slice(-12);
+  const CHART_H = 80; // px
+
+  // Y-axis scale: based on total minutes per month
+  const maxTotal = Math.max(...last12.map(d => d.easyMin + d.tempoMin + d.hardMin), 1);
+  const maxHours = Math.ceil(maxTotal / 60);
+  // Round up to a nice tick (next multiple of 2h or 5h)
+  const tickStep = maxHours <= 10 ? 2 : 5;
+  const yMax = Math.ceil(maxHours / tickStep) * tickStep;
+  const ticks = Array.from({ length: Math.floor(yMax / tickStep) + 1 }, (_, i) => i * tickStep);
+
   return (
     <div className="rounded-xl border border-border p-4 space-y-3">
       <p className="text-sm font-semibold text-primary">Monthly intensity distribution (last 12 months)</p>
-      <div className="flex items-end gap-1 h-20">
-        {last12.map(d => {
-          const total = d.easyMin + d.tempoMin + d.hardMin || 1;
-          const easyH = Math.round((d.easyMin / total) * 80);
-          const tempoH = Math.round((d.tempoMin / total) * 80);
-          const hardH = Math.round((d.hardMin / total) * 80);
-          return (
-            <div key={d.month} className="flex-1 flex flex-col justify-end rounded-sm overflow-hidden"
-              title={`${d.month}: Easy ${Math.round(d.easyMin/60)}h Tempo ${Math.round(d.tempoMin/60)}h Hard ${Math.round(d.hardMin/60)}h`}>
-              {hardH  > 0 && <div style={{ height: hardH,  backgroundColor: "#EF4444" }} />}
-              {tempoH > 0 && <div style={{ height: tempoH, backgroundColor: "#FBBF24" }} />}
-              {easyH  > 0 && <div style={{ height: easyH,  backgroundColor: "#6EE7B7" }} />}
-            </div>
-          );
-        })}
+      <div className="flex gap-2">
+        {/* Y-axis labels */}
+        <div className="flex flex-col justify-between text-right shrink-0" style={{ height: CHART_H }}>
+          {[...ticks].reverse().map(t => (
+            <span key={t} className="text-[9px] text-muted leading-none">{t}h</span>
+          ))}
+        </div>
+        {/* Bars */}
+        <div className="flex-1 flex items-end gap-1" style={{ height: CHART_H }}>
+          {last12.map(d => {
+            const totalMin = d.easyMin + d.tempoMin + d.hardMin;
+            const scaledH = (totalMin / 60 / yMax) * CHART_H;
+            const easyFrac  = totalMin > 0 ? d.easyMin  / totalMin : 0;
+            const tempoFrac = totalMin > 0 ? d.tempoMin / totalMin : 0;
+            const hardFrac  = totalMin > 0 ? d.hardMin  / totalMin : 0;
+            const easyPx  = Math.round(scaledH * easyFrac);
+            const tempoPx = Math.round(scaledH * tempoFrac);
+            const hardPx  = Math.round(scaledH * hardFrac);
+            const monthLabel = d.month.slice(5, 7); // "MM" part
+            return (
+              <div key={d.month} className="flex-1 flex flex-col items-stretch justify-end"
+                title={`${d.month}: Easy ${Math.round(d.easyMin/60)}h · Tempo ${Math.round(d.tempoMin/60)}h · Hard ${Math.round(d.hardMin/60)}h`}>
+                <div className="flex flex-col justify-end rounded-sm overflow-hidden">
+                  {hardPx  > 0 && <div style={{ height: hardPx,  backgroundColor: "#EF4444" }} />}
+                  {tempoPx > 0 && <div style={{ height: tempoPx, backgroundColor: "#FBBF24" }} />}
+                  {easyPx  > 0 && <div style={{ height: easyPx,  backgroundColor: "#6EE7B7" }} />}
+                </div>
+                <span className="text-[9px] text-muted text-center mt-0.5">{monthLabel}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
       <div className="flex gap-4 text-[10px] text-muted">
         <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#6EE7B7] mr-1" />Easy (below LT1)</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#FBBF24] mr-1" />Tempo (LT1–LT2)</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#EF4444] mr-1" />Hard (above LT2)</span>
+        <span className="ml-auto">Y = total hours/month</span>
       </div>
     </div>
   );

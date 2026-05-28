@@ -38,6 +38,14 @@ export async function POST(req: Request) {
   // Generate a secure verify token for this subscription
   const verifyToken = crypto.randomBytes(32).toString("hex");
 
+  // Save token BEFORE calling Strava — Strava immediately validates our GET endpoint
+  // using this token, so it must be in the DB before the outbound POST returns.
+  await prisma.appConfig.upsert({
+    where:  { userId },
+    create: { userId, stravaWebhookToken: verifyToken },
+    update: { stravaWebhookToken: verifyToken },
+  });
+
   const body = new URLSearchParams({
     client_id:     creds.stravaClientId,
     client_secret: creds.stravaClientSecret,
@@ -49,14 +57,16 @@ export async function POST(req: Request) {
   const data = await res.json();
 
   if (!res.ok) {
+    // Clean up the token we pre-saved so a retry starts fresh
+    await prisma.appConfig.update({ where: { userId }, data: { stravaWebhookToken: null } }).catch(() => {});
     return Response.json({ error: data.message ?? "Strava registration failed", details: data }, { status: res.status });
   }
 
-  // Store subscription ID + token
+  // Store subscription ID (token already saved above)
   await prisma.appConfig.upsert({
     where:  { userId },
     create: { userId, stravaWebhookSubscriptionId: data.id, stravaWebhookToken: verifyToken, stravaAutoSyncMode: "webhook" },
-    update: { stravaWebhookSubscriptionId: data.id, stravaWebhookToken: verifyToken, stravaAutoSyncMode: "webhook" },
+    update: { stravaWebhookSubscriptionId: data.id, stravaAutoSyncMode: "webhook" },
   });
 
   return Response.json({ subscriptionId: data.id, active: true });

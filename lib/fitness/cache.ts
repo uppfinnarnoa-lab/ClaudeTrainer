@@ -191,14 +191,14 @@ export async function updateVO2maxAndPaces(userId: string) {
   const personalK = personalizedFatigueExponent(allBestEfforts);
   const riegelExponent = personalK !== null ? (1 - personalK) : 1.06;
 
-  // ── Critical Speed from best efforts (LT2 proxy) ─────────────────────
-  const csResult = estimateCriticalSpeed(allBestEfforts);
+  // ── Critical Speed from best efforts + race PBs (LT2 proxy) ─────────
+  const csResult = estimateCriticalSpeed(allBestEfforts, racePBs);
 
   // ── Aerobic decoupling LT1 (parallel estimate) ────────────────────────
   // Separate query — avoids loading large splitsMetric JSON for all activities.
   const decouplingRuns = await prisma.activity.findMany({
     where: { userId, splitDetailFetched: true, movingTime: { gte: 2700 }, distance: { gte: 7000 } },
-    select: { splitsMetric: true, movingTime: true, distance: true, totalElevationGain: true },
+    select: { splitsMetric: true, movingTime: true, distance: true, totalElevationGain: true, weatherTemp: true, startDate: true },
   });
   const decouplingResult = estimateLT1FromDecoupling(decouplingRuns, maxHR);
 
@@ -415,7 +415,7 @@ export async function updateHRZones(userId: string) {
     .map(a => a.maxHeartrate!);
   const hardRunClean = [...hardRunMaxHRs].sort((a,b)=>a-b);
   const statisticalMax = hardRunClean.length >= 5
-    ? hardRunClean[Math.floor(hardRunClean.length * 0.70)]  // 70th pct — conservative, avoids occasional outliers
+    ? hardRunClean[Math.floor(hardRunClean.length * 0.80)]  // 80th pct — well-trained athletes rarely hit true max
     : null;
 
   // Priority for BUTTON-PRESS estimation:

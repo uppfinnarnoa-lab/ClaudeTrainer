@@ -8,11 +8,11 @@ import { subDays } from "date-fns";
 import { secPerKmToPaceStr } from "@/lib/fitness/paces";
 
 /**
- * POST /api/coach/calibrate?mode=algorithmic|ai
+ * POST /api/coach/calibrate?mode=algorithmic|ai|pct
  *
  * mode=algorithmic: pure math, updates zones and returns them
- * mode=ai:          same math + sends a structured prompt to the AI;
- *                   AI returns JSON zone boundaries which are applied to the cache
+ * mode=ai:          same math + AI-assisted zone boundary inference
+ * mode=pct:         builds zones from explicit % of maxHR (?lt1Pct=83&lt2Pct=89)
  */
 export async function POST(req: Request) {
   const session = await auth();
@@ -21,6 +21,49 @@ export async function POST(req: Request) {
   const userId = session.user.id;
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("mode") ?? "algorithmic";
+
+  // ── % maxHR mode: build zones from explicit LT1/LT2 percentages ───────────
+  if (mode === "pct") {
+    const lt1Pct = Math.max(60, Math.min(95, Number(searchParams.get("lt1Pct") ?? 83)));
+    const lt2Pct = Math.max(70, Math.min(98, Number(searchParams.get("lt2Pct") ?? 89)));
+    if (lt1Pct >= lt2Pct) {
+      return NextResponse.json({ error: "LT1 % must be less than LT2 %" }, { status: 400 });
+    }
+
+    const cache = await prisma.fitnessCache.findUnique({ where: { userId } });
+    if (!cache) return NextResponse.json({ error: "No fitness cache — run a sync first" }, { status: 404 });
+
+    const maxHR  = cache.maxHR;
+    const restHR = cache.restHR;
+    const lt1HR  = Math.round(maxHR * lt1Pct / 100);
+    const lt2HR  = Math.round(maxHR * lt2Pct / 100);
+    const zones  = buildHRZones(maxHR, restHR);
+    // Override LT boundaries with user-specified percentages
+    const z2width = Math.max(8, Math.round(lt1HR * 0.07));
+    const pctZones = {
+      z1: [restHR,            lt1HR - z2width],
+      z2: [lt1HR - z2width,   lt1HR],
+      z3: [lt1HR,             lt2HR],
+      z4: [lt2HR,             Math.min(lt2HR + 8, maxHR - 2)],
+      z5: [Math.min(lt2HR + 8, maxHR - 2), maxHR],
+    };
+
+    await prisma.fitnessCache.update({
+      where: { userId },
+      data:  { zones: pctZones, thresholdHR: lt2HR },
+    });
+
+    return NextResponse.json({
+      vo2max: cache.vo2max, vdot: cache.vdot,
+      maxHR, restHR, thresholdHR: lt2HR,
+      zones: pctZones, paces: cache.paces,
+      computedAt: new Date(),
+      aiInsights: null,
+      rSquared: null,
+      zonesMethod: `${lt1Pct}%/${lt2Pct}% of maxHR`,
+      lt1HR, lt2HR,
+    });
+  }
 
   // Always run algorithmic estimation first (ground truth)
   const result = await updateHRZones(userId);

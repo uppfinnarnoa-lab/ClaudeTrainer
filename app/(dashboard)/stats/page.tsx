@@ -43,12 +43,13 @@ export default async function StatsPage() {
         sportType: { contains: "run", mode: "insensitive" },
         weatherTemp: { not: null },
         averageSpeed: { not: null },
-        distance: { gte: 1000 },
+        distance: { gte: 3000 },  // min 3 km — short efforts are too noisy
+        isRace: false,             // exclude races (paced differently)
       },
-      select: { averageSpeed: true, weatherTemp: true, weatherWind: true },
+      select: { averageSpeed: true, weatherTemp: true, weatherWind: true, startDate: true, name: true, sportType: true, averageHeartrate: true },
     }),
   ]);
-  const weatherStats = computeWeatherStats(weatherActs);
+  const weatherStats = computeWeatherStats(weatherActs as WeatherAct[]);
 
   const bestPerDist = new Map<number, { distanceM: number; timeSec: number; date: Date }>();
   for (const r of allRacePBs) {
@@ -191,15 +192,15 @@ export default async function StatsPage() {
       ? { z1Pct: Math.round(fpZ1/fpTotal*100), z2Pct: Math.round(fpZ2/fpTotal*100), z3Pct: Math.round(fpZ3/fpTotal*100) }
       : null;
 
-    // Pace zone seconds from calibrated pace zones
+    // Pace zone seconds from calibrated pace zones (index [1] = fast boundary of each zone)
     const fastPaceZoneSeconds: Record<string, number> = { easy: 0, marathon: 0, threshold: 0, interval: 0, repetition: 0 };
     for (const a of recentForCurve) {
       if (!a.averageSpeed || a.startDate < twelveWeeksAgoFast || !/run|trail/i.test(a.sportType ?? "")) continue;
       const pace = 1000 / a.averageSpeed;
-      if (pace >= effectivePaceZones.easy[0])           fastPaceZoneSeconds.easy      += a.movingTime;
-      else if (pace >= effectivePaceZones.marathon[0])  fastPaceZoneSeconds.marathon   += a.movingTime;
-      else if (pace >= effectivePaceZones.threshold[0]) fastPaceZoneSeconds.threshold  += a.movingTime;
-      else if (pace >= effectivePaceZones.interval[0])  fastPaceZoneSeconds.interval   += a.movingTime;
+      if (pace >= effectivePaceZones.easy[1])           fastPaceZoneSeconds.easy      += a.movingTime;
+      else if (pace >= effectivePaceZones.marathon[1])  fastPaceZoneSeconds.marathon   += a.movingTime;
+      else if (pace >= effectivePaceZones.threshold[1]) fastPaceZoneSeconds.threshold  += a.movingTime;
+      else if (pace >= effectivePaceZones.interval[1])  fastPaceZoneSeconds.interval   += a.movingTime;
       else                                              fastPaceZoneSeconds.repetition += a.movingTime;
     }
 
@@ -383,13 +384,15 @@ export default async function StatsPage() {
   }
 
   // Pace zone seconds (last 12 weeks, running only)
+  // Zones are [slow_boundary, fast_boundary] (higher sec/km = slower pace).
+  // A run belongs to a zone when its pace >= that zone's fast boundary (index [1]).
   const paceZoneSeconds: Record<string, number> = { easy: 0, marathon: 0, threshold: 0, interval: 0, repetition: 0 };
   for (const a of activities.filter((x: A) => x.startDate >= twelveWeeksAgo && x.averageSpeed && /run|trail/i.test(x.sportType))) {
     const pace = 1000 / a.averageSpeed!;
-    if (pace >= effectivePaceZones.easy[0])           paceZoneSeconds.easy      += a.movingTime;
-    else if (pace >= effectivePaceZones.marathon[0])  paceZoneSeconds.marathon   += a.movingTime;
-    else if (pace >= effectivePaceZones.threshold[0]) paceZoneSeconds.threshold  += a.movingTime;
-    else if (pace >= effectivePaceZones.interval[0])  paceZoneSeconds.interval   += a.movingTime;
+    if (pace >= effectivePaceZones.easy[1])           paceZoneSeconds.easy      += a.movingTime;
+    else if (pace >= effectivePaceZones.marathon[1])  paceZoneSeconds.marathon   += a.movingTime;
+    else if (pace >= effectivePaceZones.threshold[1]) paceZoneSeconds.threshold  += a.movingTime;
+    else if (pace >= effectivePaceZones.interval[1])  paceZoneSeconds.interval   += a.movingTime;
     else                                              paceZoneSeconds.repetition += a.movingTime;
   }
 
@@ -857,9 +860,58 @@ function buildOverview(_: OverviewResult): OverviewResult { return _; } // just 
 export interface WeatherBand { label: string; count: number; avgPaceSecPerKm: number | null }
 export interface WeatherStats { byTemp: WeatherBand[]; byWind: WeatherBand[] }
 
-function computeWeatherStats(
-  acts: Array<{ averageSpeed: number | null; weatherTemp: number | null; weatherWind: number | null }>,
-): WeatherStats {
+type WeatherAct = {
+  averageSpeed: number | null;
+  weatherTemp: number | null;
+  weatherWind: number | null;
+  startDate: Date;
+  name: string;
+  sportType: string;
+  averageHeartrate: number | null;
+};
+
+/**
+ * Compute weather-performance statistics while isolating confounders:
+ *  - OL (orienteering) excluded — terrain varies wildly, not speed comparable
+ *  - Fitness drift removed via rolling 12-week median pace residual
+ *  - Only road/trail easy-to-moderate effort runs (not ultra-hard race efforts)
+ */
+function computeWeatherStats(acts: WeatherAct[]): WeatherStats {
+  // Filter out OL sessions and non-running types
+  const isOL = (a: WeatherAct) =>
+    /orienteer|ol\b|ol-/i.test(a.sportType) ||
+    /\bol\b|\borienteringsl|\bskogsl|\bolpass/i.test(a.name ?? "");
+
+  const clean = acts.filter(a =>
+    a.averageSpeed && a.averageSpeed > 0 &&
+    !isOL(a) &&
+    /run|trail/i.test(a.sportType)
+  );
+
+  if (clean.length < 10) {
+    return { byTemp: [], byWind: [] };
+  }
+
+  // ── Fitness-drift correction ──────────────────────────────────────────────
+  // Compute rolling 12-week median pace. Each run's "adjusted pace" = raw pace
+  // minus (rolling median - overall median) so seasonal fitness changes are removed.
+  const sorted = [...clean].sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+  const overallPaces = sorted.map(a => 1000 / a.averageSpeed!);
+  const overallMedian = median(overallPaces);
+
+  // For each run, find median pace of runs in a ±6-week window
+  const adjustedPaces = sorted.map((a, i) => {
+    const rawPace = 1000 / a.averageSpeed!;
+    const windowStart = a.startDate.getTime() - 42 * 86400_000;
+    const windowEnd   = a.startDate.getTime() + 42 * 86400_000;
+    const windowPaces = sorted
+      .filter(b => b.startDate.getTime() >= windowStart && b.startDate.getTime() <= windowEnd)
+      .map(b => 1000 / b.averageSpeed!);
+    const windowMed = median(windowPaces);
+    // Adjusted pace = raw pace - (local fitness level - overall average)
+    return rawPace - (windowMed - overallMedian);
+  });
+
   const TEMP_BANDS = [
     { label: "< 5°C",   test: (t: number) => t < 5 },
     { label: "5–10°C",  test: (t: number) => t >= 5  && t < 10 },
@@ -868,25 +920,27 @@ function computeWeatherStats(
     { label: "> 20°C",  test: (t: number) => t >= 20 },
   ];
   const WIND_BANDS = [
-    { label: "Calm (< 10)",    test: (w: number) => w < 10 },
-    { label: "Light (10–20)",  test: (w: number) => w >= 10 && w < 20 },
+    { label: "Calm (< 10)",      test: (w: number) => w < 10 },
+    { label: "Light (10–20)",    test: (w: number) => w >= 10 && w < 20 },
     { label: "Moderate (20–30)", test: (w: number) => w >= 20 && w < 30 },
-    { label: "Strong (> 30)", test: (w: number) => w >= 30 },
+    { label: "Strong (> 30)",    test: (w: number) => w >= 30 },
   ];
 
-  function computeBands<T extends { label: string; test: (v: number) => boolean }>(
-    bands: T[],
-    getValue: (a: typeof acts[0]) => number | null,
+  function computeBands(
+    bands: { label: string; test: (v: number) => boolean }[],
+    getValue: (a: WeatherAct) => number | null,
   ): WeatherBand[] {
     return bands.map(band => {
-      const matching = acts.filter(a => {
-        const v = getValue(a);
-        return v != null && band.test(v) && a.averageSpeed && a.averageSpeed > 0;
-      });
-      if (matching.length === 0) return { label: band.label, count: 0, avgPaceSecPerKm: null };
-      const paces = matching.map(a => 1000 / a.averageSpeed!);
+      const indices = sorted
+        .map((a, i) => ({ a, i }))
+        .filter(({ a }) => {
+          const v = getValue(a);
+          return v != null && band.test(v);
+        });
+      if (indices.length < 2) return { label: band.label, count: 0, avgPaceSecPerKm: null };
+      const paces = indices.map(({ i }) => adjustedPaces[i]);
       const avg = paces.reduce((s, p) => s + p, 0) / paces.length;
-      return { label: band.label, count: matching.length, avgPaceSecPerKm: Math.round(avg) };
+      return { label: band.label, count: indices.length, avgPaceSecPerKm: Math.round(avg) };
     });
   }
 
@@ -894,6 +948,13 @@ function computeWeatherStats(
     byTemp: computeBands(TEMP_BANDS, a => a.weatherTemp),
     byWind: computeBands(WIND_BANDS, a => a.weatherWind),
   };
+}
+
+function median(vals: number[]): number {
+  if (vals.length === 0) return 0;
+  const s = [...vals].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
 }
 
 // ── Easy run pace trend ──────────────────────────────────────────────────────
