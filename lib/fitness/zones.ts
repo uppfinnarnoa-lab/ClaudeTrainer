@@ -51,7 +51,8 @@ export function estimateMaxHR(activityMaxHRs: number[], cap = MAXHR_ARTIFACT_CAP
 
 /**
  * Estimate max HR from race/hard-effort activities.
- * Uses 80th percentile — races are the best chance to reach true max.
+ * Uses 80th percentile + 5 bpm margin: race-peak HR is typically ~5 bpm below
+ * true physiological HRmax (Scharhag-Rosenberger et al. 2023, n=5311 CPET).
  * Requires ≥ 2 race observations to avoid single-effort noise.
  */
 export function estimateMaxHRFromRaces(raceMaxHRs: number[], cap = MAXHR_ARTIFACT_CAP): number | null {
@@ -60,7 +61,7 @@ export function estimateMaxHRFromRaces(raceMaxHRs: number[], cap = MAXHR_ARTIFAC
   if (clean.length === 0) return null;
   const sorted = [...clean].sort((a, b) => a - b);
   const p80 = sorted[Math.min(Math.floor(sorted.length * 0.80), sorted.length - 1)];
-  return Math.round(p80);
+  return Math.min(Math.round(p80) + 5, 210);
 }
 
 /**
@@ -335,6 +336,7 @@ export function estimateZonesFromStatisticalAnalysis(
     totalElevationGain: number;
     weatherTemp?: number | null;
     startDate?: Date;
+    isRace?: boolean;
   }>,
   maxHR: number,
   restHR: number,
@@ -373,7 +375,9 @@ export function estimateZonesFromStatisticalAnalysis(
       // Aerobic zone (62–85% maxHR) has clearest LT signal; down-weight extremes
       const hrFrac = r.avgHR / maxHR;
       const zoneProximity = hrFrac >= 0.62 && hrFrac <= 0.85 ? 1.5 : 0.75;
-      return { gap, hr: r.avgHR, weight: tempWeight * recency * zoneProximity };
+      // Race activities are max-effort steady-state at known pace — most informative for LT2
+      const raceBoost = r.isRace ? 3.0 : 1.0;
+      return { gap, hr: r.avgHR, weight: tempWeight * recency * zoneProximity * raceBoost };
     })
     .filter((p): p is { gap: number; hr: number; weight: number } =>
       p !== null && p.gap > 200 && p.gap < 391 // 3:20–6:31/km (OL paces excluded upstream)
@@ -391,15 +395,17 @@ export function estimateZonesFromStatisticalAnalysis(
     bucketMap.get(key)!.push({ hr: p.hr, w: p.weight });
   }
 
-  const MIN_COUNT = 10;
+  const MIN_COUNT = 15;
   const buckets: BucketPoint[] = [...bucketMap.entries()]
     .filter(([, pts]) => pts.length >= MIN_COUNT)
     .map(([pace, pts]) => {
       const sorted = pts.sort((a, b) => a.hr - b.hr);
       const totalW = sorted.reduce((s, p) => s + p.w, 0);
-      let cum = 0, medianHR = sorted[0].hr;
-      for (const p of sorted) { cum += p.w; if (cum >= totalW / 2) { medianHR = p.hr; break; } }
-      return { pace, medianHR, count: pts.length };
+      // 80th-percentile HR per bucket: tracks the near-ceiling effort at each pace,
+      // not the average — median is pulled down by easy/tired days at that pace
+      let cum = 0, pct80HR = sorted[0].hr;
+      for (const p of sorted) { cum += p.w; if (cum >= totalW * 0.80) { pct80HR = p.hr; break; } }
+      return { pace, medianHR: pct80HR, count: pts.length };
     })
     .sort((a, b) => a.pace - b.pace);
 
@@ -412,18 +418,24 @@ export function estimateZonesFromStatisticalAnalysis(
   const nb = mono.length;
   const paceArr = mono.map(b => b.pace);
   const hrArr   = mono.map(b => b.medianHR);
+  // Reciprocal-density weights: sparse buckets (threshold pace) get equal influence
+  // to the dense easy-run buckets, preventing regression bias toward the easy end
+  const bucketWeights = mono.map(b => 1 / Math.sqrt(b.count));
 
   let bestErr = Infinity, bp1 = 2, bp2 = 4;
   for (let i = 1; i < nb - 3; i++) {
     for (let j = i + 2; j < nb - 1; j++) {
-      const err = segErr(paceArr, hrArr, 0, i) + segErr(paceArr, hrArr, i, j) + segErr(paceArr, hrArr, j, nb - 1);
+      const err = segErr(paceArr, hrArr, 0, i, bucketWeights) +
+                  segErr(paceArr, hrArr, i, j, bucketWeights) +
+                  segErr(paceArr, hrArr, j, nb - 1, bucketWeights);
       if (err < bestErr) { bestErr = err; bp1 = i; bp2 = j; }
     }
   }
 
-  // R² — how well does the 3-segment model fit?
-  const meanHR = hrArr.reduce((s, v) => s + v, 0) / nb;
-  const totalVar = hrArr.reduce((s, v) => s + (v - meanHR) ** 2, 0);
+  // Weighted R² — consistent with the weighted fit
+  const totalBW = bucketWeights.reduce((s, w) => s + w, 0);
+  const meanHR = hrArr.reduce((s, v, i) => s + v * bucketWeights[i], 0) / totalBW;
+  const totalVar = hrArr.reduce((s, v, i) => s + bucketWeights[i] * (v - meanHR) ** 2, 0);
   const rSquared = Math.max(0, Math.round((1 - bestErr / totalVar) * 100) / 100);
 
   if (rSquared < 0.62) return null;
@@ -485,16 +497,24 @@ function poolAdjacentViolators(buckets: BucketPoint[]): BucketPoint[] {
   return out;
 }
 
-function segErr(paces: number[], hrs: number[], from: number, to: number): number {
+function segErr(paces: number[], hrs: number[], from: number, to: number, weights?: number[]): number {
   if (to - from < 2) return 0;
   const xs = paces.slice(from, to + 1), ys = hrs.slice(from, to + 1);
-  const n = xs.length;
-  const mx = xs.reduce((s, v) => s + v, 0) / n;
-  const my = ys.reduce((s, v) => s + v, 0) / n;
-  const slope = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0) /
-                (xs.reduce((s, x) => s + (x - mx) ** 2, 0) || 1e-6);
+  const ws = weights ? weights.slice(from, to + 1) : undefined;
+  const totalW = ws ? ws.reduce((s, w) => s + w, 0) : xs.length;
+  const mx = ws ? xs.reduce((s, x, i) => s + x * ws[i], 0) / totalW : xs.reduce((s, v) => s + v, 0) / xs.length;
+  const my = ws ? ys.reduce((s, y, i) => s + y * ws[i], 0) / totalW : ys.reduce((s, v) => s + v, 0) / ys.length;
+  const sxy = ws
+    ? xs.reduce((s, x, i) => s + ws[i] * (x - mx) * (ys[i] - my), 0)
+    : xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0);
+  const sxx = ws
+    ? xs.reduce((s, x, i) => s + ws[i] * (x - mx) ** 2, 0)
+    : xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+  const slope = sxy / (sxx || 1e-6);
   const b = my - slope * mx;
-  return xs.reduce((s, x, i) => s + (ys[i] - (slope * x + b)) ** 2, 0);
+  return ws
+    ? xs.reduce((s, x, i) => s + ws[i] * (ys[i] - (slope * x + b)) ** 2, 0)
+    : xs.reduce((s, x, i) => s + (ys[i] - (slope * x + b)) ** 2, 0);
 }
 
 // Classify an average HR value into a zone (1-5). Returns 0 if no HR.

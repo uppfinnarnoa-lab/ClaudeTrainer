@@ -714,7 +714,7 @@ export default async function StatsPage() {
     (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 330));
   const statActRuns = (activities as SlowAct[])
     .filter(a => /run|trail/i.test(a.sportType) && a.averageHeartrate && olRaceFilterSlow(a))
-    .map(a => ({ avgHR: a.averageHeartrate!, distanceM: a.distance, movingTimeSec: a.movingTime, totalElevationGain: a.totalElevationGain, startDate: a.startDate }));
+    .map(a => ({ avgHR: a.averageHeartrate!, distanceM: a.distance, movingTimeSec: a.movingTime, totalElevationGain: a.totalElevationGain, startDate: a.startDate, isRace: a.isRace }));
   const statLapRuns = (activities as SlowAct[])
     .filter(a => /run|trail/i.test(a.sportType) && olRaceFilterSlow(a) && Array.isArray(a.laps))
     .flatMap(a => (a.laps as SlowLapRow[]).filter(l =>
@@ -725,6 +725,7 @@ export default async function StatsPage() {
       movingTimeSec: l.moving_time,
       totalElevationGain: l.total_elevation_gain ?? 0,
       startDate: (a as A).startDate,
+      isRace: (a as A).isRace,
     })));
   const statZones = estimateZonesFromStatisticalAnalysis(
     [...statActRuns, ...statLapRuns],

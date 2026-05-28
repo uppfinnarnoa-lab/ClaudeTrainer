@@ -56,8 +56,8 @@ function computeDrift(splits: SplitWithHR[]): { avgHR: number; drift: number } |
   );
   if (valid.length < 4) return null;
 
-  // Always skip first split (warm-up)
-  const work = valid.slice(1, valid.length >= 8 ? -1 : undefined);
+  // Skip first 2 splits: warm-up lap + HR stabilisation transient (HR takes 5-10 min to settle)
+  const work = valid.length >= 9 ? valid.slice(2, -1) : valid.slice(2);
   if (work.length < 4) return null;
 
   const mid  = Math.floor(work.length / 2);
@@ -75,9 +75,9 @@ export function estimateLT1FromDecoupling(
   activities: ActivityForDecoupling[],
   maxHR: number,
 ): DecouplingResult | null {
-  const MIN_TIME = 45 * 60;
-  const MIN_DIST = 7_000;
-  const DRIFT_THRESHOLD = 0.05;
+  const MIN_TIME = 55 * 60;  // 55 min: Oliveira 2021 — drift only discriminating after ~40 min
+  const MIN_DIST = 8_500;    // proportional to MIN_TIME; also filters very slow recovery runs
+  const DRIFT_THRESHOLD = 0.035; // Oliveira 2021: natural at-LT1 drift over 40 min ≈ 4%, so 5% gives only 1% margin; 3.5% is more discriminating
   const BUCKET = 5;
   // Tighter CV: reject anything with > 10% pace variation (intervals, fartlek)
   const CV_MAX = 0.10;

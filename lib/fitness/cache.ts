@@ -309,7 +309,7 @@ export async function updateVO2maxAndPaces(userId: string) {
   type LapRow = { average_heartrate?: number; distance: number; moving_time: number; total_elevation_gain?: number };
   const statActRuns = (activities as (Act & { laps?: unknown })[])
     .filter(a => /run|trail/i.test(a.sportType) && a.averageHeartrate && olRaceFilter(a))
-    .map(a => ({ avgHR: a.averageHeartrate!, distanceM: a.distance, movingTimeSec: a.movingTime, totalElevationGain: a.totalElevationGain, startDate: a.startDate }));
+    .map(a => ({ avgHR: a.averageHeartrate!, distanceM: a.distance, movingTimeSec: a.movingTime, totalElevationGain: a.totalElevationGain, startDate: a.startDate, isRace: a.isRace }));
 
   const statLapRuns = (activities as (Act & { laps?: unknown })[])
     .filter(a => /run|trail/i.test(a.sportType) && olRaceFilter(a) && Array.isArray(a.laps))
@@ -321,6 +321,7 @@ export async function updateVO2maxAndPaces(userId: string) {
       movingTimeSec: l.moving_time,
       totalElevationGain: l.total_elevation_gain ?? 0,
       startDate: (a as Act).startDate,
+      isRace: (a as Act).isRace,
     })));
 
   const statZonesResult = estimateZonesFromStatisticalAnalysis(
@@ -486,6 +487,7 @@ export async function updateHRZones(userId: string) {
       movingTimeSec: a.movingTime,
       totalElevationGain: a.totalElevationGain ?? 0,
       startDate: a.startDate,
+      isRace: a.isRace,
     }));
 
   const statLapRunsZones = (acts as (ActLight & { laps?: unknown })[])
@@ -498,6 +500,7 @@ export async function updateHRZones(userId: string) {
       movingTimeSec: l.moving_time,
       totalElevationGain: l.total_elevation_gain ?? 0,
       startDate: (a as ActLight).startDate,
+      isRace: (a as ActLight).isRace,
     })));
 
   const statResult = estimateZonesFromStatisticalAnalysis([...statRuns, ...statLapRunsZones], maxHR, restHR);
