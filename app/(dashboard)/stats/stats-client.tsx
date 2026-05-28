@@ -416,16 +416,28 @@ function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | nul
 
   const tempBands  = weatherStats.byTemp.filter(b => b.count > 0);
   const windBands  = weatherStats.byWind.filter(b => b.count > 0);
-  const maxTempCount = Math.max(...tempBands.map(b => b.count), 1);
-  const maxWindCount = Math.max(...windBands.map(b => b.count), 1);
 
-  // Find fastest pace band (lowest sec/km) as reference for relative coloring
+  // Fastest (min sec/km) and slowest (max sec/km) pace per group — used for both
+  // bar width (longer = faster) and color coding
   const tempsWithPace = tempBands.filter(b => b.avgPaceSecPerKm != null);
   const fastestTempPace = tempsWithPace.length > 0
     ? Math.min(...tempsWithPace.map(b => b.avgPaceSecPerKm!)) : null;
+  const slowestTempPace = tempsWithPace.length > 0
+    ? Math.max(...tempsWithPace.map(b => b.avgPaceSecPerKm!)) : null;
   const windsWithPace = windBands.filter(b => b.avgPaceSecPerKm != null);
   const fastestWindPace = windsWithPace.length > 0
     ? Math.min(...windsWithPace.map(b => b.avgPaceSecPerKm!)) : null;
+  const slowestWindPace = windsWithPace.length > 0
+    ? Math.max(...windsWithPace.map(b => b.avgPaceSecPerKm!)) : null;
+
+  // Bar width encodes relative speed: fastest band = 100%, slowest = 15% minimum.
+  // Scale over the pace range so small differences remain visible.
+  function paceBarWidth(pace: number | null, fastest: number | null, slowest: number | null): number {
+    if (!pace || !fastest || !slowest) return 20;
+    const range = slowest - fastest;
+    if (range < 1) return 75;
+    return Math.round((slowest - pace) / range * 85 + 15);
+  }
 
   // Hardcoded colors (not CSS vars) so they work in inline styles regardless of theme
   function paceBarColor(sec: number | null, fastest: number | null): string {
@@ -466,7 +478,7 @@ function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | nul
                     <div
                       className="absolute h-2 rounded-full transition-all"
                       style={{
-                        width: `${(band.count / maxTempCount) * 100}%`,
+                        width: `${paceBarWidth(band.avgPaceSecPerKm, fastestTempPace, slowestTempPace)}%`,
                         backgroundColor: barColor,
                         opacity: 0.7,
                       }}
@@ -499,7 +511,7 @@ function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | nul
                     <div
                       className="absolute h-2 rounded-full transition-all"
                       style={{
-                        width: `${(band.count / maxWindCount) * 100}%`,
+                        width: `${paceBarWidth(band.avgPaceSecPerKm, fastestWindPace, slowestWindPace)}%`,
                         backgroundColor: barColor,
                         opacity: 0.7,
                       }}

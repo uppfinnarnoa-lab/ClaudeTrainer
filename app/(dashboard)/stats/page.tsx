@@ -7,6 +7,7 @@ import { buildHRZones, buildPaceZones, buildPaceZonesFromLT, estimateLTFromRaces
 import { computeTSS, buildLoadCurve, computeACWR } from "@/lib/fitness/training-load";
 import { estimateVO2max, predictRaceTime, tsbAdjustedRaceTime, riegelPredict, predictionRange, vdotFromRace } from "@/lib/fitness/vo2max";
 import { RACE_DISTANCES } from "@/lib/fitness/paces";
+import { estimateCriticalSpeed } from "@/lib/fitness/critical-speed";
 import { subDays, format, startOfWeek, startOfYear } from "date-fns";
 
 type A = {
@@ -58,6 +59,13 @@ export default async function StatsPage() {
       bestPerDist.set(d, { distanceM: r.distanceM, timeSec: r.time, date: r.date });
   }
   const racePBs = [...bestPerDist.values()];
+
+  // Compute CS live from racePBs so it shows immediately without waiting for a sync.
+  // The cache value wins if present; fallback to live calculation.
+  const liveCriticalSpeedMs =
+    fitnessCache?.criticalSpeedMs
+    ?? estimateCriticalSpeed([], racePBs)?.csMetersPerSec
+    ?? null;
 
   // ── Overview: always-fresh aggregates (fast queries, no activity rows needed) ──
   const weekStart  = startOfWeek(now, { weekStartsOn: 1 });
@@ -291,7 +299,7 @@ export default async function StatsPage() {
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
       fastStatZones, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, extraViz,
-      fitnessCache.decouplingLt1HR ?? null, fitnessCache.criticalSpeedMs ?? null,
+      fitnessCache.decouplingLt1HR ?? null, liveCriticalSpeedMs,
       profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
       fpEasyPaceTrend, fastStatZonesLaps);
   }
@@ -753,7 +761,7 @@ export default async function StatsPage() {
     { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
     modelPredictions, modelVdots,
     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear },
-    fitnessCache?.decouplingLt1HR ?? null, fitnessCache?.criticalSpeedMs ?? null,
+    fitnessCache?.decouplingLt1HR ?? null, liveCriticalSpeedMs,
     profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
     easyPaceTrend, statZonesLaps);
 }
@@ -878,10 +886,12 @@ type WeatherAct = {
  *  - Only road/trail easy-to-moderate effort runs (not ultra-hard race efforts)
  */
 function computeWeatherStats(acts: WeatherAct[]): WeatherStats {
-  // Filter out OL sessions and non-running types
+  // Filter out OL sessions and non-running types — same pattern as HR zone estimator
   const isOL = (a: WeatherAct) =>
+    /virtualrun/i.test(a.sportType) ||
+    /indoor|inomhus/i.test(a.name ?? "") ||
     /orienteer|ol\b|ol-/i.test(a.sportType) ||
-    /\bol\b|\borienteringsl|\bskogsl|\bolpass/i.test(a.name ?? "") ||
+    /\bol\b|\borienteringsl|\bskogsl|\bolpass|\bmoc\b|stafett/i.test(a.name ?? "") ||
     /^\s*wu\b|^\s*cd\b|\bwarm.?up\b|\bcool.?down\b|\bnedvarvning\b|\buppvärmning\b/i.test(a.name ?? "");
 
   const clean = acts.filter(a =>
