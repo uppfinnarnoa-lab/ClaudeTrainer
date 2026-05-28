@@ -489,6 +489,7 @@ export async function updateHRZones(userId: string) {
     );
 
   const statResult = estimateZonesFromStatisticalAnalysis([...statRuns, ...statLapRunsZones], maxHR, restHR);
+  const statLapOnlyResult = estimateZonesFromStatisticalAnalysis(statLapRunsZones, maxHR, restHR);
 
   let zonesMethod: "statistical" | "race-pbs" | "fallback" | "manual" = "fallback";
   let rSquared: number | undefined;
@@ -603,6 +604,8 @@ export async function updateHRZones(userId: string) {
       confidence: vo2maxResult.confidence, method: vo2maxResult.method,
       paces: pacesJson(paceZones), zoneSecondsJson, polarisationJson: polarisationJson ?? undefined,
       predictionsJson, vo2maxBreakdownJson: vo2maxResult.breakdown ?? {},
+      statZonesJson: (statResult ?? null) as object | null,
+      statZonesLapsJson: (statLapOnlyResult ?? null) as object | null,
     },
   });
 

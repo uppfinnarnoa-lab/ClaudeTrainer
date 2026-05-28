@@ -996,10 +996,7 @@ function StatisticalZonesCard({ sz, szLaps }: { sz: StatisticalZoneResult | null
           </div>
           <div className="border-t border-border px-4 py-3 bg-surface-2">
             <p className="text-xs text-muted">
-              Estimated from {active.bucketCount} pace buckets with at least 10 sessions each.
-              Zone widths are unequal — Z3 = LT1→LT2 ({active.lt2HR - active.lt1HR} bpm),
-              Z2 narrow ({Math.round((active.lt2HR - active.lt1HR) * 0.12)} bpm).
-              Use &quot;AI estimate&quot; to apply these zones.
+              Estimated from {active.bucketCount} pace buckets. Use the calibration button above to apply these zones.
             </p>
           </div>
         </>

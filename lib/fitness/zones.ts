@@ -445,7 +445,7 @@ export function estimateZonesFromStatisticalAnalysis(
   if (lt2PaceSecPerKm >= lt1PaceSecPerKm) return null; // LT2 must be faster than LT1
 
   // ── 5. Build non-uniform zones ─────────────────────────────────────────
-  const z2width = Math.max(4, Math.round((lt2HR - lt1HR) * 0.12));
+  const z2width = Math.max(8, Math.round(lt1HR * 0.07)); // same formula as buildHRZonesFromLT
   // Clamp Z1 lower bound so it never exceeds Z1 upper bound
   const z1hi = lt1HR - z2width;
   const z1lo = Math.min(restHR, z1hi - 1);
