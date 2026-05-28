@@ -3,11 +3,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { ClaudeClient } from "@/lib/ai/claude";
 import { GeminiClient } from "@/lib/ai/gemini";
+import { NvidiaClient, NVIDIA_DEFAULT_MODEL } from "@/lib/ai/nvidia";
 import { buildCoachContext, buildRecentActivitiesSummary } from "@/lib/ai/context-builder";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
 import { estimateCost } from "@/lib/ai/client";
 import { safeDecrypt } from "@/lib/encrypt";
-import { COACH_TOOLS, toGeminiTools, executeCoachTool, WRITE_TOOLS } from "@/lib/ai/tools";
+import { COACH_TOOLS, toGeminiTools, toOpenAITools, executeCoachTool, WRITE_TOOLS } from "@/lib/ai/tools";
 import type { AIMessage } from "@/lib/ai/client";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
@@ -54,6 +55,8 @@ export async function POST(req: NextRequest) {
   const provider = aiSettings?.provider ?? "gemini";
   const apiKey = provider === "claude"
     ? (safeDecrypt(aiSettings?.claudeApiKey) ?? process.env.ANTHROPIC_API_KEY ?? "")
+    : provider === "nvidia"
+    ? (safeDecrypt(aiSettings?.nvidiaApiKey) ?? "")
     : (safeDecrypt(aiSettings?.geminiApiKey) ?? process.env.GOOGLE_AI_API_KEY ?? "");
 
   if (!apiKey) {
@@ -74,8 +77,8 @@ export async function POST(req: NextRequest) {
       aiSettings.currentMonthSpendUsd = 0;
       aiSettings.geminiCurrentMonthSpendUsd = 0;
     }
-    const budget  = provider === "gemini" ? aiSettings.geminiMonthlyBudgetUsd  : aiSettings.monthlyBudgetUsd;
-    const current = provider === "gemini" ? aiSettings.geminiCurrentMonthSpendUsd : aiSettings.currentMonthSpendUsd;
+    const budget  = provider === "gemini" ? aiSettings.geminiMonthlyBudgetUsd  : provider === "nvidia" ? 0 : aiSettings.monthlyBudgetUsd;
+    const current = provider === "gemini" ? aiSettings.geminiCurrentMonthSpendUsd : provider === "nvidia" ? 0 : aiSettings.currentMonthSpendUsd;
     if (budget > 0 && current >= budget) {
       return new Response(
         JSON.stringify({ error: "budget_exceeded", provider, budget, current }),
@@ -162,11 +165,9 @@ export async function POST(req: NextRequest) {
         const toolUse = toolCheck.content.find(b => b.type === "tool_use") as { type: "tool_use"; name: string; input: Record<string, unknown> } | undefined;
         if (toolUse) {
           if (WRITE_TOOLS.has(toolUse.name)) {
-            // Write tool — request user approval, don't execute yet
             toolEvent = { name: toolUse.name, message: describeAction(toolUse.name, toolUse.input), success: true, pending: true, pendingInput: toolUse.input };
             messages.push({ role: "assistant", content: `[Inväntar godkännande: ${toolUse.name}] ${toolEvent.message}` });
           } else {
-            // Read tool — execute immediately (no side effects)
             const result = await executeCoachTool(toolUse.name, toolUse.input, userId);
             toolEvent = { name: toolUse.name, message: result.message, success: result.success };
             messages.push({ role: "assistant", content: `[Tool: ${toolUse.name}]\n${result.data}` });
@@ -175,6 +176,38 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch { /* tool check failed — fall through to normal stream */ }
+  } else if (provider === "nvidia") {
+    try {
+      const OpenAI = (await import("openai")).default;
+      const oaiClient = new OpenAI({ apiKey, baseURL: "https://integrate.api.nvidia.com/v1" });
+      const nvidiaModel = aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL;
+      const toolCheck = await oaiClient.chat.completions.create({
+        model: nvidiaModel,
+        max_tokens: 400,
+        tools: toOpenAITools(),
+        tool_choice: "auto",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+        ],
+      });
+      const choice = toolCheck.choices[0];
+      if (choice?.finish_reason === "tool_calls" && choice.message.tool_calls?.[0]) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const tc = choice.message.tool_calls[0] as any;
+        const toolName = tc.function.name as string;
+        const toolInput = JSON.parse(tc.function.arguments as string) as Record<string, unknown>;
+        if (WRITE_TOOLS.has(toolName)) {
+          toolEvent = { name: toolName, message: describeAction(toolName, toolInput), success: true, pending: true, pendingInput: toolInput };
+          messages.push({ role: "assistant", content: `[Inväntar godkännande: ${toolName}] ${toolEvent.message}` });
+        } else {
+          const result = await executeCoachTool(toolName, toolInput, userId);
+          toolEvent = { name: toolName, message: result.message, success: result.success };
+          messages.push({ role: "assistant", content: `[Tool: ${toolName}]\n${result.data}` });
+          messages.push({ role: "user", content: "Analysera och svara på min fråga baserat på dessa data." });
+        }
+      }
+    } catch { /* tool check failed */ }
   } else {
     // Gemini function calling
     try {
@@ -216,6 +249,8 @@ export async function POST(req: NextRequest) {
   // ── Phase 2: Stream text response ────────────────────────────────────
   const aiClient = provider === "claude"
     ? new ClaudeClient(apiKey)
+    : provider === "nvidia"
+    ? new NvidiaClient(apiKey, aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL)
     : new GeminiClient(apiKey);
 
   const encoder = new TextEncoder();
@@ -261,7 +296,7 @@ export async function POST(req: NextRequest) {
             content: fullResponse,
             tokensUsed: inputTokens + outputTokens,
             estimatedCostUsd: cost,
-            modelUsed: provider === "claude" ? "claude-sonnet-4-6" : "gemini-2.5-flash",
+            modelUsed: provider === "claude" ? "claude-sonnet-4-6" : provider === "nvidia" ? (aiSettings?.nvidiaModel ?? NVIDIA_DEFAULT_MODEL) : "gemini-2.5-flash",
           },
         });
 
@@ -269,9 +304,13 @@ export async function POST(req: NextRequest) {
         if (cost > 0) {
           const updateField = provider === "gemini"
             ? { geminiCurrentMonthSpendUsd: { increment: cost } }
+            : provider === "nvidia"
+            ? {}  // free tier — no spend tracking needed
             : { currentMonthSpendUsd: { increment: cost } };
           const createField = provider === "gemini"
             ? { geminiCurrentMonthSpendUsd: cost }
+            : provider === "nvidia"
+            ? {}
             : { currentMonthSpendUsd: cost };
           await prisma.aISettings.upsert({
             where: { userId },

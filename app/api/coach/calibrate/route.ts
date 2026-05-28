@@ -108,6 +108,8 @@ export async function POST(req: Request) {
 
   const apiKey = aiSettings?.provider === "claude"
     ? (safeDecrypt(aiSettings.claudeApiKey) ?? process.env.ANTHROPIC_API_KEY)
+    : aiSettings?.provider === "nvidia"
+    ? safeDecrypt(aiSettings.nvidiaApiKey ?? null)
     : (safeDecrypt(aiSettings?.geminiApiKey ?? null) ?? process.env.GOOGLE_AI_API_KEY);
 
   if (!apiKey) {
@@ -189,9 +191,19 @@ Din JSON med rätt värden:`;
         messages: [{ role: "user", content: prompt }],
       });
       rawText = res.content[0].type === "text" ? res.content[0].text : "";
+    } else if (aiSettings?.provider === "nvidia") {
+      const OpenAI = (await import("openai")).default;
+      const { NVIDIA_DEFAULT_MODEL } = await import("@/lib/ai/nvidia");
+      const oaiClient = new OpenAI({ apiKey: apiKey!, baseURL: "https://integrate.api.nvidia.com/v1" });
+      const res = await oaiClient.chat.completions.create({
+        model: aiSettings.nvidiaModel ?? NVIDIA_DEFAULT_MODEL,
+        max_tokens: 600,
+        messages: [{ role: "user", content: prompt }],
+      });
+      rawText = res.choices[0]?.message?.content ?? "";
     } else {
       const { GoogleGenerativeAI } = await import("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(apiKey);
+      const genAI = new GoogleGenerativeAI(apiKey!);
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const res = await model.generateContent(prompt);
       rawText = res.response.text();

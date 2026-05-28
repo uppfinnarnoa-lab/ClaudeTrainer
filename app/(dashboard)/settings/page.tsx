@@ -93,11 +93,13 @@ export default async function SettingsPage() {
       </IntegrationCard>
 
       {/* ── AI Coach ── */}
-      <IntegrationCard logo="🤖" name="AI Coach" description="Connect Claude or Gemini to power your virtual coach" connected={!!(aiSettings?.claudeApiKey || aiSettings?.geminiApiKey)}>
+      <IntegrationCard logo="🤖" name="AI Coach" description="Connect Claude, Gemini or NVIDIA NIM to power your virtual coach" connected={!!(aiSettings?.claudeApiKey || aiSettings?.geminiApiKey || aiSettings?.nvidiaApiKey)}>
         <AISettingsSection
           provider={aiSettings?.provider ?? "gemini"}
           hasClaudeKey={!!aiSettings?.claudeApiKey}
           hasGeminiKey={!!aiSettings?.geminiApiKey}
+          hasNvidiaKey={!!aiSettings?.nvidiaApiKey}
+          nvidiaModel={aiSettings?.nvidiaModel ?? ""}
           monthlyBudget={aiSettings?.monthlyBudgetUsd ?? 5}
           currentSpend={aiSettings?.currentMonthSpendUsd ?? 0}
           geminiMonthlyBudget={aiSettings?.geminiMonthlyBudgetUsd ?? 5}

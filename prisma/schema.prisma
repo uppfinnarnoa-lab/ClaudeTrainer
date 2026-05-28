@@ -322,9 +322,11 @@ model Message {
 model AISettings {
   id           String  @id @default(cuid())
   userId       String  @unique
-  provider     String  @default("gemini") // "claude"|"gemini"
+  provider     String  @default("gemini") // "claude"|"gemini"|"nvidia"
   claudeApiKey String?
   geminiApiKey String?
+  nvidiaApiKey String?
+  nvidiaModel  String? // default: "nvidia/llama-3.1-nemotron-70b-instruct-hq"
   systemPrompt String?
   // Claude budget
   monthlyBudgetUsd     Float @default(5.0)

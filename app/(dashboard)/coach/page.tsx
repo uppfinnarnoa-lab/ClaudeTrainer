@@ -34,9 +34,11 @@ export default async function CoachPage({
       })
     : [];
 
-  const provider = (aiSettings?.provider ?? "gemini") as "claude" | "gemini";
+  const provider = (aiSettings?.provider ?? "gemini") as "claude" | "gemini" | "nvidia";
   const hasApiKey = provider === "claude"
     ? !!(aiSettings?.claudeApiKey ?? process.env.ANTHROPIC_API_KEY)
+    : provider === "nvidia"
+    ? !!aiSettings?.nvidiaApiKey
     : !!(aiSettings?.geminiApiKey ?? process.env.GOOGLE_AI_API_KEY);
 
   type Conv = { id: string; title: string | null; updatedAt: Date; _count: { messages: number } };

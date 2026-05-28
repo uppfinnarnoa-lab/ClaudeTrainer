@@ -166,6 +166,18 @@ export function toGeminiTools() {
   }));
 }
 
+// OpenAI-compatible tools format (used by NVIDIA NIM and OpenAI)
+export function toOpenAITools() {
+  return COACH_TOOLS.map(t => ({
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.input_schema,
+    },
+  }));
+}
+
 // ── Executor ──────────────────────────────────────────────────────────────────
 
 export interface ToolResult {

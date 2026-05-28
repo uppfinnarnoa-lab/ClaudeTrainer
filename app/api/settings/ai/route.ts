@@ -5,9 +5,11 @@ import { encryptIfNeeded } from "@/lib/encrypt";
 import { z } from "zod";
 
 const schema = z.object({
-  provider:              z.enum(["claude", "gemini"]),
+  provider:              z.enum(["claude", "gemini", "nvidia"]),
   claudeApiKey:          z.string().optional(),
   geminiApiKey:          z.string().optional(),
+  nvidiaApiKey:          z.string().optional(),
+  nvidiaModel:           z.string().optional(),
   monthlyBudgetUsd:      z.number().min(0).max(1000),
   geminiMonthlyBudgetUsd: z.number().min(0).max(1000).optional(),
 });
@@ -20,12 +22,14 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid_input" }, { status: 400 });
 
-  const { provider, claudeApiKey, geminiApiKey, monthlyBudgetUsd, geminiMonthlyBudgetUsd } = parsed.data;
+  const { provider, claudeApiKey, geminiApiKey, nvidiaApiKey, nvidiaModel, monthlyBudgetUsd, geminiMonthlyBudgetUsd } = parsed.data;
 
   const data = {
     provider,
     ...(claudeApiKey ? { claudeApiKey: encryptIfNeeded(claudeApiKey)! } : {}),
     ...(geminiApiKey ? { geminiApiKey: encryptIfNeeded(geminiApiKey)! } : {}),
+    ...(nvidiaApiKey ? { nvidiaApiKey: encryptIfNeeded(nvidiaApiKey)! } : {}),
+    ...(nvidiaModel  ? { nvidiaModel } : {}),
     monthlyBudgetUsd,
     ...(geminiMonthlyBudgetUsd !== undefined ? { geminiMonthlyBudgetUsd } : {}),
   };

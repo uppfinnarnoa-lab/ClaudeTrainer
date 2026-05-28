@@ -32,7 +32,7 @@ interface ConvSummary {
 }
 
 interface Props {
-  provider: "claude" | "gemini";
+  provider: "claude" | "gemini" | "nvidia";
   hasApiKey: boolean;
   monthlyBudget: number;
   currentSpend: number;
@@ -313,7 +313,7 @@ export function ChatInterface({
 
         {/* Header strip */}
         <div className="shrink-0 flex items-center gap-3 px-4 h-10 border-b border-border text-xs text-muted bg-surface">
-          <span className="font-medium text-primary">{provider === "claude" ? "Claude Sonnet" : "Gemini Flash"}</span>
+          <span className="font-medium text-primary">{provider === "claude" ? "Claude Sonnet" : provider === "nvidia" ? "NVIDIA NIM" : "Gemini Flash"}</span>
           {sessionCost > 0 && <span>Session: <span className="font-mono">${sessionCost.toFixed(4)}</span></span>}
           {monthlyBudget > 0 && (
             <div className="flex items-center gap-2 ml-auto">
