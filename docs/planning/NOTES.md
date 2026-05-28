@@ -12,30 +12,40 @@ _Datum-format: ÅÅÅÅ-MM-DD. En rad per post. Flytta till archive när löst._
 
 ## Idéer / features
 
-2026-05-27 · [IDEA] Easy run pace trend-statistik
+2026-05-27 · [IDEA] Easy run pace trend-statistik — **IMPLEMENTERAD** (commit 9f756ed)
 
-**Vad**: Visa hur easy run-tempo (GAP-justerat) förändrats över tid — ett mått på aerob adaption.
+---
 
-**Varför det är intressant**: Om tempot vid samma HR sjunker (= du springer snabbare för samma ansträngning) syns aerob förbättring. Komplement till VO2max-estimat som är brus-känsligare.
+2026-05-28 · [IDEA] Item L — Ersätt LS-breakpoint-sökning för LT1 med modified D-max
 
-**Definition easy run**: `avgHR < LT1` (Z1+Z2), distans ≥ 6 km, ej tävling.
+**Vad**: I bucket-estimatorn används en exhaustive piecewise linear LS-sökning för att hitta LT1-breakpointen. LS-estimatorn är matematiskt bimodal när sluttpunktsförändringen är liten (Baek 2018) — LT1-knicket är bara ~10–15% lutningsförändring, vilket gör att LS drar breakpointen mot den täta easy-zonen.
 
-**Metric**: Viktad median GAP (grade-adjusted pace) per månad/kvartal för qualifying-löpningar. Sekundärt: "aerob effektivitet" = pace/HR (lägre = bättre).
+**Föreslagen fix**: Ersätt LS-sökningen *för LT1* med **modified D-max**:
+1. Fitta ett polynom (grad 3–4) på de buckettade HR:pace-punkterna
+2. Dra en linje från första till sista bucketen
+3. LT1 = punkten med maximalt vinkelrätt avstånd från den linjen (geometriskt mest "krökt")
 
-**Datakvalitet**: Ja, tillräckligt om användaren har ≥ 2 år data. Kräver:
-- Korrekt LT1-estimat för att klassificera "easy" rätt
-- GAP-korrigering för terräng
-- Säsongsfiltrar (varma sommardagar höjer HR = missar easy-klassning → väderdata är redan inläst)
-- Minst 3 qualifying-pass per period för att perioden ska visas
+LS behålls för LT2 (stor lutningsförändring = pålitlig). PMC20508457 och Jang & Ko (2017) visar att D-max har bättre limits-of-agreement mot referensmetoder än bi-segmented regression för tröskeldetektion.
 
-**Implementation**:
-- Ny sektion på stats-sidan: "Aerobic pace trend"
-- Linjediagram: x=tid (månadsvis, senaste 3 år), y=median GAP (sec/km) för easy-löpningar
-- Overlay: genomsnittlig HR för perioden (sekundär axel, dämpad)
-- Visa trend-linje (linjär regression) för att se riktning
-- Toggle: visa per kvartal istället för månad vid lång period
+**Komplexitet**: Måttlig refaktor av `estimateZonesFromStatisticalAnalysis()` i `lib/fitness/zones.ts`. Se `docs/planning/bucket-estimator-improvements.md` Item L för fullständig analys.
 
-**Varning**: Systematisk förändring i löpterräng (fler backar = långsammare GAP trots samma form) kan se ut som regression. Bör noteras i UI.
+---
+
+2026-05-28 · [IDEA] Tanaka-formel som UI-hint i Settings (inte automatisk korrigering)
+
+**Vad**: När `dateOfBirth` är satt, visa bredvid maxHR-fältet: "Åldersformel (Tanaka): 183 bpm" som informationstext. Användaren kan då manuellt justera om data-estimatet avviker mycket.
+
+**Varför inte automatisk korrigering**: Tanaka ±18 bpm 95% CI — för stor individuell variation för att vara "tyst golv". Se Item D-analys i `docs/planning/bucket-estimator-improvements.md`.
+
+**Implementation**: Ren UI-ändring i `app/(dashboard)/settings/page.tsx` — beräkna `208 - 0.7 * age` och rendera som muted text bredvid maxHR-input.
+
+---
+
+2026-05-28 · [IDEA] CS som valideringssignal för LT1/LT2
+
+**Vad**: Critical Speed (CS) justeras nära LT2/MLSS. Eftersom VT1/VT2 hastighetskvotvid ≈ 0.844, bör LT1-hastigheten ligga i intervallet [CS × 0.77, CS × 0.91]. Om bucket-estimatorn ger ett LT1 utanför detta intervall → visa varning i kalibreringspanelen ("LT1 estimate may be inaccurate — consider manual calibration").
+
+**Komplexitet**: Liten — CS beräknas redan i cache. Kräver att CS-värdet passas till zones-logiken som ett sanity-check.
 
 <!-- exempel: 2026-05-26 · [IDEA] Visa träningsbelastning som heatmap per månad -->
 
