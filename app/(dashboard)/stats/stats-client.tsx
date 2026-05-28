@@ -950,13 +950,13 @@ function StatisticalZonesCard({ sz }: { sz: StatisticalZoneResult | null }) {
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT1 — Aerobic Threshold</p>
               <p className="text-2xl font-semibold font-mono text-primary">{sz.lt1HR} <span className="text-sm text-muted font-normal">bpm</span></p>
-              <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)}/km (GAP)</p>
+              <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt1PaceSecPerKm)} (GAP)</p>
               <p className="text-xs text-muted">Z2/Z3-gräns — lugna pass stannar under detta</p>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted uppercase tracking-wide">LT2 — Lactate Threshold</p>
               <p className="text-2xl font-semibold font-mono text-primary">{sz.lt2HR} <span className="text-sm text-muted font-normal">bpm</span></p>
-              <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt2PaceSecPerKm)}/km (GAP)</p>
+              <p className="text-xs text-muted">Tempo: {secPerKmToPaceStr(sz.lt2PaceSecPerKm)} (GAP)</p>
               <p className="text-xs text-muted">Z3/Z4-gräns — tröskelintensitet</p>
             </div>
           </div>
