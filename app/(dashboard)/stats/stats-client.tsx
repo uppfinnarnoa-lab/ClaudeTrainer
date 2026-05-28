@@ -448,7 +448,7 @@ function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | nul
     <div className="rounded-xl bg-surface border border-border p-5 space-y-5">
       <div>
         <p className="text-sm font-semibold text-primary">Weather profile</p>
-        <p className="text-[10px] text-muted mt-0.5">Pace adjusted for fitness drift — OL sessions excluded. Green = fastest band, red = 15+ s/km slower.</p>
+        <p className="text-[10px] text-muted mt-0.5">Pace adjusted for fitness drift — OL sessions excluded. Temp analysis: calm wind only (&lt;20 km/h). Wind analysis: moderate temp only (0–25°C). Green = fastest band, red = 15+ s/km slower.</p>
       </div>
 
       {tempBands.length > 0 && (

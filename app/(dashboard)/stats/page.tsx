@@ -930,15 +930,18 @@ function computeWeatherStats(acts: WeatherAct[]): WeatherStats {
   function computeBands(
     bands: { label: string; test: (v: number) => boolean }[],
     getValue: (a: WeatherAct) => number | null,
+    controlFilter?: (a: WeatherAct) => boolean,
   ): WeatherBand[] {
     return bands.map(band => {
       const indices = sorted
         .map((a, i) => ({ a, i }))
         .filter(({ a }) => {
           const v = getValue(a);
-          return v != null && band.test(v);
+          if (v == null || !band.test(v)) return false;
+          if (controlFilter && !controlFilter(a)) return false;
+          return true;
         });
-      if (indices.length < 2) return { label: band.label, count: 0, avgPaceSecPerKm: null };
+      if (indices.length < 3) return { label: band.label, count: 0, avgPaceSecPerKm: null };
       const paces = indices.map(({ i }) => adjustedPaces[i]);
       const avg = paces.reduce((s, p) => s + p, 0) / paces.length;
       return { label: band.label, count: indices.length, avgPaceSecPerKm: Math.round(avg) };
@@ -946,8 +949,14 @@ function computeWeatherStats(acts: WeatherAct[]): WeatherStats {
   }
 
   return {
-    byTemp: computeBands(TEMP_BANDS, a => a.weatherTemp),
-    byWind: computeBands(WIND_BANDS, a => a.weatherWind),
+    // Control for wind when studying temperature: only calm/light-wind runs (< 20 km/h).
+    // Removes the seasonal wind-temperature correlation (cold still days vs windy spring fronts).
+    byTemp: computeBands(TEMP_BANDS, a => a.weatherTemp,
+      a => a.weatherWind == null || a.weatherWind < 20),
+    // Control for temperature when studying wind: only moderate-temp runs (0–25°C).
+    // Removes extreme-cold/extreme-heat effects that would otherwise dominate the wind signal.
+    byWind: computeBands(WIND_BANDS, a => a.weatherWind,
+      a => a.weatherTemp != null && a.weatherTemp >= 0 && a.weatherTemp < 25),
   };
 }
 
