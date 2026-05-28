@@ -1161,30 +1161,17 @@ function IntensityProfileCard({ data }: { data: { month: string; easyMin: number
   );
   const last12 = data.slice(-12);
   const CHART_H = 80; // px
-
-  // Y-axis scale: based on total minutes per month
   const maxTotal = Math.max(...last12.map(d => d.easyMin + d.tempoMin + d.hardMin), 1);
-  const maxHours = Math.ceil(maxTotal / 60);
-  // Round up to a nice tick (next multiple of 2h or 5h)
-  const tickStep = maxHours <= 10 ? 2 : 5;
-  const yMax = Math.ceil(maxHours / tickStep) * tickStep;
-  const ticks = Array.from({ length: Math.floor(yMax / tickStep) + 1 }, (_, i) => i * tickStep);
 
   return (
     <div className="rounded-xl border border-border p-4 space-y-3">
       <p className="text-sm font-semibold text-primary">Monthly intensity distribution (last 12 months)</p>
       <div className="flex gap-2">
-        {/* Y-axis labels */}
-        <div className="flex flex-col justify-between text-right shrink-0" style={{ height: CHART_H }}>
-          {[...ticks].reverse().map(t => (
-            <span key={t} className="text-[9px] text-muted leading-none">{t}h</span>
-          ))}
-        </div>
         {/* Bars */}
         <div className="flex-1 flex items-end gap-1" style={{ height: CHART_H }}>
           {last12.map(d => {
             const totalMin = d.easyMin + d.tempoMin + d.hardMin;
-            const scaledH = (totalMin / 60 / yMax) * CHART_H;
+            const scaledH = (totalMin / maxTotal) * CHART_H;
             const easyFrac  = totalMin > 0 ? d.easyMin  / totalMin : 0;
             const tempoFrac = totalMin > 0 ? d.tempoMin / totalMin : 0;
             const hardFrac  = totalMin > 0 ? d.hardMin  / totalMin : 0;
@@ -1210,7 +1197,6 @@ function IntensityProfileCard({ data }: { data: { month: string; easyMin: number
         <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#6EE7B7] mr-1" />Easy (below LT1)</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#FBBF24] mr-1" />Tempo (LT1–LT2)</span>
         <span><span className="inline-block w-2.5 h-2.5 rounded-sm bg-[#EF4444] mr-1" />Hard (above LT2)</span>
-        <span className="ml-auto">Y = total hours/month</span>
       </div>
     </div>
   );

@@ -31,35 +31,34 @@ export interface PaceZones {
  * actually observed).
  */
 // Artifact cap: optical HR sensors can spike above 210 on wrist movement.
-// 205 bpm is the physiological ceiling for healthy adults in racing conditions.
-export const MAXHR_ARTIFACT_CAP = 205;
+// 190 bpm is a safe ceiling for most adults; true physiological max rarely exceeds this.
+export const MAXHR_ARTIFACT_CAP = 190;
 
 /**
  * Estimate max HR from per-activity max HR values.
- * Uses 90th percentile of clean data — well-trained athletes rarely reach true
- * max in training, so a high percentile is needed to avoid under-estimation.
+ * Uses 85th percentile of clean data — max is rarely reached in training.
  */
 export function estimateMaxHR(activityMaxHRs: number[]): number {
   if (activityMaxHRs.length === 0) return 185;
   const clean = activityMaxHRs.filter(h => h >= 140 && h <= MAXHR_ARTIFACT_CAP);
   if (clean.length === 0) return 185;
   const sorted = [...clean].sort((a, b) => a - b);
-  const p90 = sorted[Math.min(Math.floor(sorted.length * 0.90), sorted.length - 1)];
-  return Math.round(p90);
+  const p85 = sorted[Math.min(Math.floor(sorted.length * 0.85), sorted.length - 1)];
+  return Math.round(p85);
 }
 
 /**
  * Estimate max HR from race/hard-effort activities.
- * Uses 90th percentile — races are the best chance to reach true max.
+ * Uses 80th percentile — races are the best chance to reach true max.
  * Requires ≥ 2 race observations to avoid single-effort noise.
  */
 export function estimateMaxHRFromRaces(raceMaxHRs: number[]): number | null {
   if (raceMaxHRs.length < 2) return null;
-  const clean = raceMaxHRs.filter(h => h >= 150 && h <= MAXHR_ARTIFACT_CAP);
+  const clean = raceMaxHRs.filter(h => h >= 140 && h <= MAXHR_ARTIFACT_CAP);
   if (clean.length === 0) return null;
   const sorted = [...clean].sort((a, b) => a - b);
-  const p90 = sorted[Math.min(Math.floor(sorted.length * 0.90), sorted.length - 1)];
-  return Math.round(p90);
+  const p80 = sorted[Math.min(Math.floor(sorted.length * 0.80), sorted.length - 1)];
+  return Math.round(p80);
 }
 
 /**
@@ -70,11 +69,11 @@ export function estimateMaxHRFromRaces(raceMaxHRs: number[]): number | null {
 export function estimateMaxHRFromThreshold(thresholdHRs: number[]): number | null {
   if (thresholdHRs.length < 3) return null;
   const sorted = [...thresholdHRs].sort((a, b) => a - b);
-  // 90th percentile of threshold HRs ≈ lactate threshold HR
-  const p90idx = Math.floor(sorted.length * 0.90);
-  const thresholdHR = sorted[Math.min(p90idx, sorted.length - 1)];
-  // Threshold HR is typically 85–92% of max HR for well-trained runners; use 89%
-  return Math.round(thresholdHR / 0.89);
+  // 85th percentile of threshold HRs ≈ lactate threshold HR
+  const p85idx = Math.floor(sorted.length * 0.85);
+  const thresholdHR = sorted[Math.min(p85idx, sorted.length - 1)];
+  // Threshold HR is typically 85–92% of max HR for well-trained runners; use 88%
+  return Math.round(thresholdHR / 0.88);
 }
 
 /**
