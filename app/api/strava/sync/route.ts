@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { syncActivities, resyncRecentActivities } from "@/lib/strava/sync";
 import { updateVO2maxAndPaces } from "@/lib/fitness/cache";
+import { backfillWeather } from "@/lib/weather/backfill";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     updateVO2maxAndPaces(userId).catch(e => console.error("Fitness cache error:", e));
+    backfillWeather(userId, 50).catch(e => console.error("Weather backfill error:", e));
     return NextResponse.json({ ...result, lastSyncAt: new Date() });
   } catch (e) {
     console.error("Sync error:", e);

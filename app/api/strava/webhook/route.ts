@@ -14,6 +14,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { syncSingleActivity, deleteStravaActivity } from "@/lib/strava/sync";
+import { backfillWeather } from "@/lib/weather/backfill";
 
 // GET — Strava sends this to verify the endpoint during subscription setup
 export async function GET(req: NextRequest) {
@@ -71,6 +72,8 @@ async function handleEvent(event: StravaEvent): Promise<void> {
 
   if (event.aspect_type === "create" || event.aspect_type === "update") {
     await syncSingleActivity(userId, event.object_id);
+    // Fetch weather for the newly synced activity (limit 1 — just the newest missing)
+    backfillWeather(userId, 1).catch(e => console.error("[webhook] weather fetch error", e));
   } else if (event.aspect_type === "delete") {
     await deleteStravaActivity(userId, event.object_id);
   }

@@ -75,13 +75,14 @@ export function estimateCriticalSpeed(
   const denom = n * sumXX - sumX * sumX;
   if (Math.abs(denom) < 1e-12) return null;
 
-  const slope     = (n * sumXY - sumX * sumY) / denom;  // W' in meters
+  const slope     = (n * sumXY - sumX * sumY) / denom;  // -W'/CS (always negative for valid data)
   const intercept = (sumY - slope * sumX) / n;           // 1/CS in s/m
 
   if (intercept <= 0) return null;
 
   const csMs   = 1 / intercept;
-  const wPrime = slope;
+  // W' = -slope × CS  (slope is negative in the t/d ~ 1/d model)
+  const wPrime = -slope * csMs;
 
   // R²
   const yMean = sumY / n;

@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { syncActivities } from "@/lib/strava/sync";
 import { updateVO2maxAndPaces } from "@/lib/fitness/cache";
+import { backfillWeather } from "@/lib/weather/backfill";
 
 export async function POST(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       const since = account.lastSyncAt ?? undefined;
       const result = await syncActivities(userId, { since });
       updateVO2maxAndPaces(userId).catch(() => {});
+      backfillWeather(userId, 50).catch(() => {});
       results.push({ userId, synced: result.synced });
     } catch (e) {
       results.push({ userId, error: String(e) });
