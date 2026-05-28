@@ -387,10 +387,11 @@ export async function updateHRZones(userId: string) {
   ]);
 
   const acts = activities as ActLight[];
+  const artifactCap = profile?.maxHRArtifactCap ?? MAXHR_ARTIFACT_CAP;
   const maxHRs = acts.flatMap(a => a.maxHeartrate ? [a.maxHeartrate] : []);
   // Clean observed max: remove artifact spikes before using as filter threshold
   // Raw max(maxHRs) can be 220-230 bpm from optical sensor glitches — totally wrong
-  const cleanMaxHRs = maxHRs.filter(h => h <= MAXHR_ARTIFACT_CAP);
+  const cleanMaxHRs = maxHRs.filter(h => h <= artifactCap);
   const sortedCleanMaxHRs = [...cleanMaxHRs].sort((a, b) => a - b);
   const observedMax = sortedCleanMaxHRs.length > 0
     ? sortedCleanMaxHRs[Math.floor(sortedCleanMaxHRs.length * 0.80)] // 80th percentile of clean values
@@ -412,7 +413,7 @@ export async function updateHRZones(userId: string) {
     .filter(a => a.maxHeartrate && a.averageHeartrate
       && a.averageHeartrate > observedMax * 0.78   // hard effort (near LT1+)
       && /run|trail/i.test(a.sportType)
-      && a.maxHeartrate <= MAXHR_ARTIFACT_CAP)
+      && a.maxHeartrate <= artifactCap)
     .map(a => a.maxHeartrate!);
   const hardRunClean = [...hardRunMaxHRs].sort((a,b)=>a-b);
   const statisticalMax = hardRunClean.length >= 5
@@ -425,10 +426,10 @@ export async function updateHRZones(userId: string) {
   // 2. Estimate from data — races, statistical, threshold, percentile
   // restHR: profile (manual) > Garmin sensor > previous cache value > 50
   const maxHR = profile?.maxHeartRate    // manual override wins always
-    ?? estimateMaxHRFromRaces(raceMaxHRs)
+    ?? estimateMaxHRFromRaces(raceMaxHRs, artifactCap)
     ?? statisticalMax
     ?? estimateMaxHRFromThreshold(thresholdHRs)
-    ?? estimateMaxHR(maxHRs);
+    ?? estimateMaxHR(maxHRs, artifactCap);
   const restHR = profile?.restingHeartRate   // manual override wins
     ?? garminRecent.at(-1)?.restingHR
     ?? existingCacheForZones?.restHR          // previous calibration (not from profile!)

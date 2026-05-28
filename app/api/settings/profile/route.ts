@@ -12,9 +12,10 @@ const schema = z.object({
   sex:             z.enum(["male", "female", "other", ""]).optional().nullable(),
   maxHeartRate:    z.coerce.number().min(100).max(230).optional().nullable(),
   restingHeartRate:z.coerce.number().min(20).max(100).optional().nullable(),
-  manualLT1HR:     z.coerce.number().min(80).max(220).optional().nullable(),
-  manualLT2HR:     z.coerce.number().min(80).max(220).optional().nullable(),
-  primaryGoal:     z.string().max(200).optional().nullable(),
+  manualLT1HR:        z.coerce.number().min(80).max(220).optional().nullable(),
+  manualLT2HR:        z.coerce.number().min(80).max(220).optional().nullable(),
+  maxHRArtifactCap:   z.coerce.number().int().min(170).max(220).optional().nullable(),
+  primaryGoal:        z.string().max(200).optional().nullable(),
   yearsTraining:   z.coerce.number().int().min(0).max(80).optional().nullable(),
 });
 

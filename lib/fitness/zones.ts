@@ -40,9 +40,9 @@ export const MAXHR_ARTIFACT_CAP = 190;
  * Estimate max HR from per-activity max HR values.
  * Uses 85th percentile of clean data — max is rarely reached in training.
  */
-export function estimateMaxHR(activityMaxHRs: number[]): number {
+export function estimateMaxHR(activityMaxHRs: number[], cap = MAXHR_ARTIFACT_CAP): number {
   if (activityMaxHRs.length === 0) return 185;
-  const clean = activityMaxHRs.filter(h => h >= 140 && h <= MAXHR_ARTIFACT_CAP);
+  const clean = activityMaxHRs.filter(h => h >= 140 && h <= cap);
   if (clean.length === 0) return 185;
   const sorted = [...clean].sort((a, b) => a - b);
   const p85 = sorted[Math.min(Math.floor(sorted.length * 0.85), sorted.length - 1)];
@@ -54,9 +54,9 @@ export function estimateMaxHR(activityMaxHRs: number[]): number {
  * Uses 80th percentile — races are the best chance to reach true max.
  * Requires ≥ 2 race observations to avoid single-effort noise.
  */
-export function estimateMaxHRFromRaces(raceMaxHRs: number[]): number | null {
+export function estimateMaxHRFromRaces(raceMaxHRs: number[], cap = MAXHR_ARTIFACT_CAP): number | null {
   if (raceMaxHRs.length < 2) return null;
-  const clean = raceMaxHRs.filter(h => h >= 140 && h <= MAXHR_ARTIFACT_CAP);
+  const clean = raceMaxHRs.filter(h => h >= 140 && h <= cap);
   if (clean.length === 0) return null;
   const sorted = [...clean].sort((a, b) => a - b);
   const p80 = sorted[Math.min(Math.floor(sorted.length * 0.80), sorted.length - 1)];

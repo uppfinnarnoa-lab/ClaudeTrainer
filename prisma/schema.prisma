@@ -44,6 +44,7 @@ model AthleteProfile {
   restingHeartRate Int?
   manualLT1HR      Int?      // User-set LT1 (aerobic threshold) override — only overrides, estimate never writes here
   manualLT2HR      Int?      // User-set LT2 (lactate threshold) override — only overrides, estimate never writes here
+  maxHRArtifactCap Int?      // HR readings above this are treated as sensor artifacts (default 190)
   primaryGoal      String?
   yearsTraining    Int?
   updatedAt        DateTime  @updatedAt

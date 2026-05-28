@@ -100,6 +100,8 @@ export function StatsClient(props: Props) {
       ]))
     : props.weeklyVolumes;
   const form = tsbLabel(todayLoad.tsb);
+  const initialLt1Pct = hrZones.maxHR > 0 ? Math.round(hrZones.z3[0] / hrZones.maxHR * 100) : 83;
+  const initialLt2Pct = hrZones.maxHR > 0 ? Math.round(hrZones.z4[0] / hrZones.maxHR * 100) : 89;
 
   return (
     <div className="space-y-6">
@@ -231,7 +233,7 @@ export function StatsClient(props: Props) {
       {section === "Zones" && (
         <div className="space-y-6">
           <SectionCard title="HR zone distribution (last 12 weeks)" tips={[tooltips.hrZone, tooltips.polarization]}
-            action={<ZoneCalibrationButton />}>
+            action={<ZoneCalibrationButton initialLt1Pct={initialLt1Pct} initialLt2Pct={initialLt2Pct} />}>
             <HRZonesChart zoneSeconds={zoneSeconds} />
           </SectionCard>
 
@@ -640,11 +642,11 @@ function PaceZoneCard({ pzs, paceZones }: { pzs: Record<string, number>; paceZon
 
 type CalibMethod = "algorithmic" | "ai" | "pct_maxhr";
 
-function ZoneCalibrationButton() {
+function ZoneCalibrationButton({ initialLt1Pct = 83, initialLt2Pct = 89 }: { initialLt1Pct?: number; initialLt2Pct?: number }) {
   const [loading, setLoading] = useState<CalibMethod | null>(null);
   const [method,  setMethod]  = useState<CalibMethod>("algorithmic");
-  const [lt1Pct,  setLt1Pct]  = useState(83);
-  const [lt2Pct,  setLt2Pct]  = useState(89);
+  const [lt1Pct,  setLt1Pct]  = useState(initialLt1Pct);
+  const [lt2Pct,  setLt2Pct]  = useState(initialLt2Pct);
   const [result, setResult] = useState<{ insights?: string | null; maxHR?: number; vo2max?: number; aiApplied?: boolean; rSquared?: number | null; zonesMethod?: string; lt1HR?: number; lt2HR?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
