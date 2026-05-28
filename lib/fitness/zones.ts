@@ -1,6 +1,8 @@
 // Heart rate and pace zone calculations.
 // Zones are defined relative to the athlete's lactate threshold HR and VO2max pace.
 
+import { gradeAdjustedPace } from "./vo2max";
+
 export interface HRZones {
   z1: [number, number]; // recovery
   z2: [number, number]; // aerobic
@@ -338,6 +340,14 @@ export function estimateZonesFromStatisticalAnalysis(
   const MIN_DIST = 800;          // allows 1km lap splits from activities
   const MIN_DURATION_SEC = 180;  // 3 min — laps are pre-warmed from the surrounding run
 
+  // Prefer 90-day recency half-life to track current fitness; fall back to 180 days when
+  // fewer than 40 runs exist in the last 90 days (injury/off-season gaps).
+  const recentCount = runs.filter(r => {
+    if (!r.startDate) return false;
+    return (Date.now() - r.startDate.getTime()) / 86_400_000 < 90;
+  }).length;
+  const halfLife = recentCount >= 40 ? 90 : 180;
+
   const points = runs
     .filter(r =>
       // Reject near-max HR (sensor artifacts or all-out efforts — not steady state)
@@ -348,17 +358,19 @@ export function estimateZonesFromStatisticalAnalysis(
     )
     .map(r => {
       const rawPace = r.movingTimeSec / (r.distanceM / 1000);
-      const grade = Math.min(0.12, Math.max(0, r.totalElevationGain / r.distanceM));
-      const gap = rawPace / (1 + grade * 0.033);
+      const gap = gradeAdjustedPace(rawPace, r.totalElevationGain, r.distanceM);
       const temp = r.weatherTemp ?? 15;
       // Reject very hot runs entirely — heat drastically inflates HR beyond useful range
       if (temp > 30) return null;
       const tempWeight = temp > 25 ? 0.35 : temp > 20 ? 0.75 : 1.0;
       const daysAgo = r.startDate
         ? (Date.now() - r.startDate.getTime()) / 86_400_000
-        : 180;
-      const recency = Math.exp(-daysAgo / 180);
-      return { gap, hr: r.avgHR, weight: tempWeight * recency };
+        : halfLife;
+      const recency = Math.exp(-daysAgo / halfLife);
+      // Aerobic zone (62–85% maxHR) has clearest LT signal; down-weight extremes
+      const hrFrac = r.avgHR / maxHR;
+      const zoneProximity = hrFrac >= 0.62 && hrFrac <= 0.85 ? 1.5 : 0.75;
+      return { gap, hr: r.avgHR, weight: tempWeight * recency * zoneProximity };
     })
     .filter((p): p is { gap: number; hr: number; weight: number } =>
       p !== null && p.gap > 200 && p.gap < 391 // 3:20–6:31/km (OL paces excluded upstream)

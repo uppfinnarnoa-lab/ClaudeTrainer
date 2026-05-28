@@ -206,14 +206,16 @@ export function vo2maxFromSubmaxEffort(
 // ── Grade-Adjusted Pace ───────────────────────────────────────────────────
 
 /**
- * Adjust flat pace for elevation gain.
- * Minetti (2002) cost-of-transport model: uphill adds ~3.3% per % grade.
- * Eliminates the biggest source of noise in the HR-pace regression for hilly runs.
+ * Adjust flat pace for elevation gain using the Minetti (2002) piecewise metabolic cost model.
+ * Cmet(i) = 155.4i⁵ − 30.4i⁴ − 43.3i³ + 46.3i² + 19.5i + 3.6  (W·kg⁻¹·m⁻¹)
+ * GAP = rawPace × Cmet(0)/Cmet(i) = rawPace / (Cmet(i)/3.6)
+ * Replaces the linear 0.033 approximation which was nearly flat for fractional grades.
  */
 export function gradeAdjustedPace(paceSecPerKm: number, elevGainM: number, distM: number): number {
   if (distM < 500 || elevGainM <= 0) return paceSecPerKm;
-  const grade = Math.min(0.15, elevGainM / distM); // cap at 15%
-  return paceSecPerKm / (1 + grade * 0.033);
+  const i = Math.min(0.25, elevGainM / distM);
+  const cost = (155.4*i**5 - 30.4*i**4 - 43.3*i**3 + 46.3*i**2 + 19.5*i + 3.6) / 3.6;
+  return paceSecPerKm / cost;
 }
 
 /**

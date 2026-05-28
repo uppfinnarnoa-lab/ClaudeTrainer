@@ -34,8 +34,9 @@ interface ActivityForDecoupling {
 
 function gapSpeed(speedMs: number, elevDiff: number, distM: number): number {
   if (distM < 50 || elevDiff === 0) return speedMs;
-  const grade = Math.max(-0.25, Math.min(0.25, elevDiff / distM));
-  return speedMs / (1 + grade * 0.033); // Minetti metabolic cost
+  const i = Math.max(-0.25, Math.min(0.25, elevDiff / distM));
+  const cost = (155.4*i**5 - 30.4*i**4 - 43.3*i**3 + 46.3*i**2 + 19.5*i + 3.6) / 3.6;
+  return speedMs * cost;
 }
 
 function halfRatio(segs: SplitWithHR[]): number {

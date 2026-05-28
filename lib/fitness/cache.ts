@@ -54,6 +54,7 @@ async function loadActivitiesLight(userId: string) {
       sportType: true, name: true, distance: true, movingTime: true,
       averageHeartrate: true, maxHeartrate: true, totalElevationGain: true,
       averageSpeed: true, isRace: true, startDate: true,
+      laps: true,
     },
   });
 }
@@ -461,18 +462,22 @@ export async function updateHRZones(userId: string) {
     : buildHRZones(maxHR, restHR);
 
   // ── Method 2: Statistical zone analysis from bucketed training data ───
-  // Uses all running activities, finds LT1/LT2 as deflection points in the
+  // Uses all running activities + lap splits, finds LT1/LT2 as deflection points in the
   // HR-pace curve. Applied directly when R² ≥ 0.80 (high confidence).
+  type LapRowLight = { average_heartrate?: number; distance: number; moving_time: number; total_elevation_gain?: number };
+  const olRaceFilterLight = (a: ActLight) =>
+    !/virtualrun/i.test(a.sportType) &&
+    !/indoor|inomhus/i.test(a.name ?? "") &&
+    !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
+    (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 330));
+
   const statRuns = acts
     .filter(a =>
       a.averageHeartrate &&
       /run|trail/i.test(a.sportType) &&
-      !/virtualrun/i.test(a.sportType) &&
-      !/indoor|inomhus/i.test(a.name ?? "") &&
+      olRaceFilterLight(a) &&
       a.distance >= 4000 && a.movingTime >= 900 &&
-      !/\bol\b|\borienteringsl|\bskogsl|\bolpass|orienteer|\bmoc\b|stafett/i.test(a.name ?? "") &&
-      !/^\s*wu\b|^\s*cd\b|\bwarm.?up\b|\bcool.?down\b|\bnedvarvning\b|\buppvärmning\b/i.test(a.name ?? "") &&
-      (!a.isRace || (a.averageSpeed != null && 1000 / a.averageSpeed < 330))
+      !/^\s*wu\b|^\s*cd\b|\bwarm.?up\b|\bcool.?down\b|\bnedvarvning\b|\buppvärmning\b/i.test(a.name ?? "")
     )
     .map(a => ({
       avgHR: a.averageHeartrate!,
@@ -482,7 +487,19 @@ export async function updateHRZones(userId: string) {
       startDate: a.startDate,
     }));
 
-  const statResult = estimateZonesFromStatisticalAnalysis(statRuns, maxHR, restHR);
+  const statLapRunsZones = (acts as (ActLight & { laps?: unknown })[])
+    .filter(a => /run|trail/i.test(a.sportType) && olRaceFilterLight(a) && Array.isArray(a.laps))
+    .flatMap(a => (a.laps as LapRowLight[]).filter(l =>
+      l.average_heartrate && l.distance >= 800 && l.moving_time >= 180
+    ).map(l => ({
+      avgHR: l.average_heartrate!,
+      distanceM: l.distance,
+      movingTimeSec: l.moving_time,
+      totalElevationGain: l.total_elevation_gain ?? 0,
+      startDate: (a as ActLight).startDate,
+    })));
+
+  const statResult = estimateZonesFromStatisticalAnalysis([...statRuns, ...statLapRunsZones], maxHR, restHR);
 
   let zonesMethod: "statistical" | "race-pbs" | "fallback" | "manual" =
     lt.source === "race-pbs" ? "race-pbs" : "fallback";
