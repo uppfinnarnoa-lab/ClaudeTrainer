@@ -18,14 +18,14 @@ export async function GET(req: NextRequest) {
     where: {
       userId: session.user.id,
       startDate: { gte: subDays(center, 3), lte: addDays(center, 3) },
-      // Exclude warm-up and cool-down segments
-      NOT: { name: { contains: "warm", mode: "insensitive" } },
+      // Exclude dedicated warm-up and cool-down activities (startsWith to avoid false positives like "5k TT + CD!")
+      NOT: { name: { startsWith: "warm", mode: "insensitive" } },
       AND: [
-        { NOT: { name: { contains: "cool", mode: "insensitive" } } },
-        { NOT: { name: { contains: "WU", mode: "insensitive" } } },
-        { NOT: { name: { contains: "CD", mode: "insensitive" } } },
-        { NOT: { name: { contains: "uppvärmning", mode: "insensitive" } } },
-        { NOT: { name: { contains: "nedvarvning", mode: "insensitive" } } },
+        { NOT: { name: { startsWith: "cool", mode: "insensitive" } } },
+        { NOT: { name: { startsWith: "WU", mode: "insensitive" } } },
+        { NOT: { name: { startsWith: "CD", mode: "insensitive" } } },
+        { NOT: { name: { startsWith: "uppvärmning", mode: "insensitive" } } },
+        { NOT: { name: { startsWith: "nedvarvning", mode: "insensitive" } } },
       ],
     },
     orderBy: { startDate: "asc" },

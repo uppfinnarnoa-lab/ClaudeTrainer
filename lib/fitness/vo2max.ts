@@ -659,7 +659,7 @@ export function estimateVO2max(
     [model1Vdot,  vdotWeight,               "VDOT (race PBs)"],
     [model7Vdot,  tsbWeight,                "TSB-adjusted (form)"],
     [model8Vdot,  hrFormWeight,             "HR-form signal"],
-    [model4Vdot,  varWeight,                "Volume-adj. Riegel"],
+    [model4Vdot,  varWeight,                "Volume-Adjusted Riegel"],
     [model6Vdot,  csWeight,                 "Critical Speed"],
     [model2,      hasRacePBs ? 0.05 : 0.12, "Uth-Sørensen"],
     [model5Vdot,  hasRacePBs ? 0.01 : 0.05, "Decay bridge"],
