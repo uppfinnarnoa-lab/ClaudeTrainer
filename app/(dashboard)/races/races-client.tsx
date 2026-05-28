@@ -103,11 +103,12 @@ export function RacesClient({ records: initialRecords, perfTrend = [] }: Props) 
   }
 
   function onSaved(r: RaceRecord, isEdit: boolean) {
+    const normalized = { ...r, date: r.date.slice(0, 10) };
     if (isEdit) {
-      setRecords(prev => prev.map(x => x.id === r.id ? r : x));
+      setRecords(prev => prev.map(x => x.id === normalized.id ? normalized : x));
     } else {
-      setRecords(prev => [...prev, r]);
-      setSelected(r.distance);
+      setRecords(prev => [...prev, normalized]);
+      setSelected(normalized.distance);
     }
     setShowAdd(false);
     setEditRecord(null);
@@ -375,7 +376,7 @@ function RaceModal({ record, onClose, onSave }: {
   const [hh, setHH] = useState(initTime.hh);
   const [mm, setMM] = useState(initTime.mm);
   const [ss, setSS] = useState(initTime.ss);
-  const [date, setDate] = useState(record?.date ?? new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(record?.date ? record.date.slice(0, 10) : new Date().toISOString().slice(0, 10));
   const [event, setEvent] = useState(record?.eventName ?? "");
   const [notes, setNotes] = useState(record?.notes ?? "");
   const [linkedActivity, setLinkedActivity] = useState(record?.stravaActivityId ?? "");

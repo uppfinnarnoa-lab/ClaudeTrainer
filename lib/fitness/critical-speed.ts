@@ -42,7 +42,24 @@ export function estimateCriticalSpeed(
 
   const usable = [...merged.entries()].map(([distance, elapsed_time]) => ({ distance, elapsed_time }));
   // 2 points are enough for a linear regression (5K + 10K is a common and valid pair)
-  if (usable.length < 2) return null;
+  if (usable.length < 2) {
+    // Empirical fallback: derive CS from HM or marathon PB (both > 15 000 m so excluded above)
+    // Literature: HM pace ≈ CS × 0.97; Marathon pace ≈ CS × 0.93
+    if (!racePBs) return null;
+    const hm  = racePBs.find(r => Math.abs(r.distanceM - 21097) < 200);
+    const mar = racePBs.find(r => Math.abs(r.distanceM - 42195) < 500);
+    // Prefer HM (closer to CS intensity); fall back to marathon
+    const pb  = hm ?? mar;
+    if (!pb || pb.timeSec <= 0) return null;
+    const factor = hm ? 0.97 : 0.93;
+    const paceMs = pb.distanceM / pb.timeSec; // m/s
+    return {
+      csMetersPerSec: paceMs / factor,
+      wPrimeMeters:   200,  // unknown — placeholder
+      rSquared:       0,    // signals empirical estimate, not regression
+      effortsUsed:    1,
+    };
+  }
 
   // Linear regression: time/distance = CS_inv + W'/distance
   // i.e. y = a + b*x  where  y = time/distance, x = 1/distance

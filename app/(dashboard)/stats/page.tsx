@@ -62,10 +62,10 @@ export default async function StatsPage() {
 
   // Compute CS live from racePBs so it shows immediately without waiting for a sync.
   // The cache value wins if present; fallback to live calculation.
-  const liveCriticalSpeedMs =
-    fitnessCache?.criticalSpeedMs
-    ?? estimateCriticalSpeed([], racePBs)?.csMetersPerSec
-    ?? null;
+  const liveCsResult = estimateCriticalSpeed([], racePBs);
+  const liveCriticalSpeedMs = fitnessCache?.criticalSpeedMs ?? liveCsResult?.csMetersPerSec ?? null;
+  // rSquared === 0 means empirical HM/marathon estimate (no regression possible)
+  const liveCsRSq = fitnessCache?.criticalSpeedMs != null ? null : (liveCsResult?.rSquared ?? null);
 
   // ── Overview: always-fresh aggregates (fast queries, no activity rows needed) ──
   const weekStart  = startOfWeek(now, { weekStartsOn: 1 });
@@ -299,7 +299,7 @@ export default async function StatsPage() {
     return renderStats(totalCount, overview, sparklines, weeklyVolumes, loadCurve, todayLoad,
       fastZoneSeconds, hrZones, vo2max, effectivePaceZones, predictions, fastPolarisation, acwr,
       fastStatZones, overviewRun, fastAnalytics, fastPaceZoneSeconds, fastModelPredictions, fastModelVdots, extraViz,
-      fitnessCache.decouplingLt1HR ?? null, liveCriticalSpeedMs,
+      fitnessCache.decouplingLt1HR ?? null, liveCriticalSpeedMs, liveCsRSq,
       profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
       fpEasyPaceTrend, fastStatZonesLaps);
   }
@@ -761,7 +761,7 @@ export default async function StatsPage() {
     { aeiByWeek, reByWeek, rampRate, injuryRisk, activeStreak, tempSensitivity }, paceZoneSeconds,
     modelPredictions, modelVdots,
     { heatmapData, monthlyOverlay, intensityProfile, vdotTrend, terrainFactor, perfByDistYear },
-    fitnessCache?.decouplingLt1HR ?? null, liveCriticalSpeedMs,
+    fitnessCache?.decouplingLt1HR ?? null, liveCriticalSpeedMs, liveCsRSq,
     profile?.maxHeartRate ?? null, profile?.restingHeartRate ?? null, weatherStats,
     easyPaceTrend, statZonesLaps);
 }
@@ -808,6 +808,7 @@ function renderStats(
   } | null,
   decouplingLt1HR?: number | null,
   criticalSpeedMs?: number | null,
+  criticalSpeedRSq?: number | null,
   manualMaxHR?: number | null,
   manualRestHR?: number | null,
   weatherStats?: WeatherStats,
@@ -844,6 +845,7 @@ function renderStats(
         extraViz={extraViz ?? null}
         decouplingLt1HR={decouplingLt1HR ?? null}
         criticalSpeedMs={criticalSpeedMs ?? null}
+        criticalSpeedRSq={criticalSpeedRSq ?? null}
         manualMaxHR={manualMaxHR ?? null}
         manualRestHR={manualRestHR ?? null}
         weatherStats={weatherStats ?? null}

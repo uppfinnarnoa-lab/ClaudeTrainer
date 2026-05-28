@@ -58,6 +58,7 @@ interface Props {
   modelVdots: Record<string, number>;
   decouplingLt1HR: number | null;
   criticalSpeedMs: number | null;
+  criticalSpeedRSq: number | null;
   manualMaxHR: number | null;
   manualRestHR: number | null;
   weatherStats: WeatherStats | null;
@@ -86,7 +87,7 @@ export function StatsClient(props: Props) {
   const o = sportMode === "run" ? props.overviewRun : props.overview;
   const { sparklines, weeklyVolumes, loadCurve, todayLoad,
     zoneSeconds, vo2max, paceZones, predictions, hrZones, ltBounds, polarisation, acwr, statZones, statZonesLaps, analytics, paceZoneSeconds,
-    modelPredictions, modelVdots, extraViz, decouplingLt1HR, criticalSpeedMs, manualMaxHR, manualRestHR, weatherStats, easyPaceTrend } = props;
+    modelPredictions, modelVdots, extraViz, decouplingLt1HR, criticalSpeedMs, criticalSpeedRSq, manualMaxHR, manualRestHR, weatherStats, easyPaceTrend } = props;
   const [section, setSection] = useState<Section>("Overview");
   const [volumeMode, setVolumeMode] = useState<"distance" | "time">("distance");
   const [sportFilter, setSportFilter] = useState<string | null>(null);
@@ -247,7 +248,7 @@ export function StatsClient(props: Props) {
           <PolarisationCard pol={polarisation} zoneSeconds={zoneSeconds} />
 
           {/* HR zone table with LT/AT boundaries */}
-          <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} decouplingLt1HR={decouplingLt1HR} criticalSpeedMs={criticalSpeedMs} manualMaxHR={manualMaxHR} manualRestHR={manualRestHR} />
+          <HRZoneTable hrZones={hrZones} ltBounds={ltBounds} decouplingLt1HR={decouplingLt1HR} criticalSpeedMs={criticalSpeedMs} criticalSpeedRSq={criticalSpeedRSq} manualMaxHR={manualMaxHR} manualRestHR={manualRestHR} />
         </div>
       )}
 
@@ -401,7 +402,8 @@ export function StatsClient(props: Props) {
 }
 
 function WeatherProfileCard({ weatherStats }: { weatherStats: WeatherStats | null }) {
-  if (!weatherStats || (!weatherStats.byTemp.some(b => b.count > 0) && !weatherStats.byWind.some(b => b.count > 0))) return (
+  if (!weatherStats || !weatherStats.byTemp || !weatherStats.byWind ||
+      (!weatherStats.byTemp.some(b => b.count > 0) && !weatherStats.byWind.some(b => b.count > 0))) return (
     <div className="rounded-xl bg-surface border border-border p-5 space-y-5">
       <p className="text-sm font-semibold text-primary">Weather profile</p>
       <p className="text-xs text-muted py-4 text-center">No weather data — run Backfill weather data in Settings.</p>
@@ -758,11 +760,12 @@ const ZONE_META = [
   { key: "z5", label: "Z5", name: "VO2max",    color: "#EF4444", purpose: "Above LT2 — develops top-end aerobic power" },
 ];
 
-function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manualMaxHR, manualRestHR }: {
+function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, criticalSpeedRSq, manualMaxHR, manualRestHR }: {
   hrZones: HRZones;
   ltBounds: { lt1: number; lt2: number; ltTrainingRange: [number, number]; atTrainingRange: [number, number] };
   decouplingLt1HR?: number | null;
   criticalSpeedMs?: number | null;
+  criticalSpeedRSq?: number | null;
   manualMaxHR?: number | null;
   manualRestHR?: number | null;
 }) {
@@ -885,10 +888,13 @@ function HRZoneTable({ hrZones, ltBounds, decouplingLt1HR, criticalSpeedMs, manu
               {criticalSpeedMs == null && (
                 <span className="ml-1 text-[10px] text-warning">(needs ≥ 2 PBs in 200–15 000 m range)</span>
               )}
+              {criticalSpeedMs != null && criticalSpeedRSq === 0 && (
+                <span className="ml-1 text-[10px] text-warning">~estimated from HM/marathon PB</span>
+              )}
             </span>
             <span className={`font-mono text-sm font-semibold ${criticalSpeedMs != null ? "text-primary" : "text-muted"}`}>
               {criticalSpeedMs != null
-                ? `${(criticalSpeedMs * 60).toFixed(0) === "0" ? "—" : `${Math.round(1000 / criticalSpeedMs / 60)}:${String(Math.round(1000 / criticalSpeedMs) % 60).padStart(2, "0")} /km`}`
+                ? `${Math.round(1000 / criticalSpeedMs / 60)}:${String(Math.round(1000 / criticalSpeedMs) % 60).padStart(2, "0")} /km`
                 : "—"}
             </span>
           </div>

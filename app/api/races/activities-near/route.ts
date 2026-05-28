@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { startDate: "asc" },
     select: { stravaId: true, name: true, startDate: true, distance: true, movingTime: true },
-    take: 10,
+    take: 20,
   });
 
   type A = { stravaId: bigint; name: string; startDate: Date; distance: number; movingTime: number };
