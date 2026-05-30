@@ -18,7 +18,7 @@ interface Activity {
   distance: number; movingTime: number;
   totalElevationGain: number; averageHeartrate: number | null;
   averageSpeed: number | null; isRace: boolean; weatherTemp: number | null;
-  stravaId: string;
+  stravaId: string; hasLaps: boolean;
 }
 
 function ActivityPill({ a }: { a: Activity }) {
@@ -26,12 +26,13 @@ function ActivityPill({ a }: { a: Activity }) {
   const label = a.sportType.replace(/([A-Z])/g, " $1").trim().split(" ")[0];
   return (
     <div
-      className="rounded px-1 py-0.5 text-[9px] font-medium leading-tight truncate"
-      style={{ backgroundColor: `${color}20`, color }}
-      title={a.name}
+      className="rounded px-1 py-0.5 text-[9px] font-medium leading-tight truncate flex items-center gap-0.5"
+      style={{ backgroundColor: `${color}20`, color, opacity: a.hasLaps ? 1 : 0.6 }}
+      title={a.hasLaps ? a.name : `${a.name} — saknar detaljdata (laps)`}
     >
       {a.isRace ? "🏆 " : ""}{label}
       {a.distance > 0 && ` ${Math.round(a.distance / 100) / 10}k`}
+      {!a.hasLaps && <span className="shrink-0 opacity-60">·</span>}
     </div>
   );
 }
@@ -160,6 +161,11 @@ export function HistoryClient({ activities }: { activities: Activity[] }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-primary truncate">{a.name}</span>
                       {a.isRace && <Trophy size={13} className="text-warning shrink-0" />}
+                      {!a.hasLaps && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-surface-2 text-muted border border-border shrink-0">
+                          sammanfattad
+                        </span>
+                      )}
                     </div>
                     <span
                       className="text-xs px-2 py-0.5 rounded-full font-medium"

@@ -1,21 +1,20 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { HistoryClient } from "./history-client";
-import { subDays } from "date-fns";
 
 export default async function HistoryPage() {
   const session = await auth();
   const userId = session!.user!.id!;
 
-  // Load last 6 months of activities for the calendar view
   const activities = await prisma.activity.findMany({
-    where: { userId, startDate: { gte: subDays(new Date(), 180) } },
+    where: { userId },
     orderBy: { startDate: "asc" },
     select: {
       id: true, name: true, description: true, sportType: true,
       startDate: true, distance: true, movingTime: true,
       totalElevationGain: true, averageHeartrate: true,
       averageSpeed: true, isRace: true, weatherTemp: true, stravaId: true,
+      laps: true,
     },
   });
 
@@ -24,7 +23,7 @@ export default async function HistoryPage() {
       <div>
         <h1 className="text-2xl font-semibold text-primary">Activity History</h1>
         <p className="text-sm text-muted mt-1">
-          All your Strava activities in a calendar view — last 6 months
+          All your Strava activities in a calendar view
         </p>
       </div>
       <HistoryClient
@@ -32,6 +31,7 @@ export default async function HistoryPage() {
           ...a,
           startDate: a.startDate.toISOString().slice(0, 10),
           stravaId: a.stravaId.toString(),
+          hasLaps: a.laps !== null,
         }))}
       />
     </div>
