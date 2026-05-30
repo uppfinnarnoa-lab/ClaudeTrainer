@@ -23,16 +23,16 @@ interface Activity {
 
 function ActivityPill({ a }: { a: Activity }) {
   const color = a.isRace ? "#FBBF24" : workoutColor(a.sportType, null);
-  const label = a.sportType.replace(/([A-Z])/g, " $1").trim().split(" ")[0];
   return (
     <div
-      className="rounded px-1 py-0.5 text-[9px] font-medium leading-tight truncate flex items-center gap-0.5"
-      style={{ backgroundColor: `${color}20`, color, opacity: a.hasLaps ? 1 : 0.6 }}
-      title={a.hasLaps ? a.name : `${a.name} — saknar detaljdata (laps)`}
+      className="rounded px-1 py-0.5 text-[9px] font-medium leading-tight flex items-center gap-0.5 min-w-0"
+      style={{ backgroundColor: a.hasLaps ? `${color}20` : "#94A3B820", color: a.hasLaps ? color : "#94A3B8" }}
+      title={a.hasLaps ? a.name : `${a.name} — saknar detaljdata (laps ej backfillad)`}
     >
-      {a.isRace ? "🏆 " : ""}{label}
-      {a.distance > 0 && ` ${Math.round(a.distance / 100) / 10}k`}
-      {!a.hasLaps && <span className="shrink-0 opacity-60">·</span>}
+      {a.isRace && "🏆 "}
+      <span className="truncate">{a.name}</span>
+      {a.distance > 0 && <span className="shrink-0 opacity-70"> {Math.round(a.distance / 100) / 10}k</span>}
+      {!a.hasLaps && <span className="shrink-0 ml-0.5 text-[8px] border border-current rounded px-0.5 opacity-70">!</span>}
     </div>
   );
 }
@@ -149,12 +149,13 @@ export function HistoryClient({ activities }: { activities: Activity[] }) {
           ) : (
             selected.map(a => {
               const color = a.isRace ? "#FBBF24" : workoutColor(a.sportType, null);
+              const cardColor = a.hasLaps ? color : "#94A3B8";
               return (
               <div
                 key={a.id}
                 onClick={() => router.push(`/activities/${a.id}`)}
                 className="relative rounded-xl border border-border p-4 hover:border-accent/40 hover:bg-surface-2 transition-colors cursor-pointer"
-                style={{ borderLeftWidth: 3, borderLeftColor: color }}
+                style={{ borderLeftWidth: 3, borderLeftColor: cardColor }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
@@ -169,7 +170,7 @@ export function HistoryClient({ activities }: { activities: Activity[] }) {
                     </div>
                     <span
                       className="text-xs px-2 py-0.5 rounded-full font-medium"
-                      style={{ backgroundColor: `${color}20`, color }}
+                      style={{ backgroundColor: `${cardColor}20`, color: cardColor }}
                     >
                       {a.sportType.replace(/([A-Z])/g, " $1").trim()}
                     </span>
@@ -181,7 +182,7 @@ export function HistoryClient({ activities }: { activities: Activity[] }) {
                     <div className="text-right space-y-0.5 text-xs font-mono">
                       {a.distance > 0 && <p className="text-primary font-semibold">{formatDistance(a.distance)}</p>}
                       <p className="text-muted">{formatDuration(a.movingTime)}</p>
-                      {a.averageSpeed && <p className="text-muted">{formatPace(a.averageSpeed)}/km</p>}
+                      {a.averageSpeed && <p className="text-muted">{formatPace(a.averageSpeed)}</p>}
                       {a.averageHeartrate && <p className="text-muted">{Math.round(a.averageHeartrate)} bpm</p>}
                       {a.weatherTemp !== null && <p className="text-muted">{Math.round(a.weatherTemp)}°C</p>}
                     </div>
